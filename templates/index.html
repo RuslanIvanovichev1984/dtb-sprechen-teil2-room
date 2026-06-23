@@ -20,6 +20,7 @@ button:disabled { background:#aaa; cursor:default; }
 .transcript { background:#fffde7; border:1px solid #f9a825; border-radius:6px; padding:10px 14px; font-size:13px; white-space:pre-wrap; margin-top:8px; }
 .eval { white-space:pre-wrap; font-size:14px; line-height:1.5; }
 .hidden { display:none; }
+.badge { display:inline-block; background:#1F3864; color:#fff; border-radius:5px; padding:4px 10px; font-size:13px; font-weight:600; }
 </style>
 </head>
 <body>
@@ -29,32 +30,33 @@ button:disabled { background:#aaa; cursor:default; }
 <div class="card">
   <label for="groqKey">Groq API-Key (gsk_...)</label>
   <input type="text" id="groqKey" placeholder="gsk_...">
-  <div class="status">Wird nur lokal auf diesem Geraet gespeichert, nie an den Server geschickt.</div>
+  <div class="status" id="key-hint">Wird nur lokal auf diesem Geraet gespeichert, nie an den Server geschickt.</div>
 </div>
 
-<!-- HOST: Sitzung erstellen -->
-<div class="card" id="card-host-create">
-  <h2>Sitzung erstellen (Lehrer-Laptop)</h2>
+<!-- CONTROL: Sitzung erstellen -->
+<div class="card hidden" id="card-control-create">
+  <h2>Sitzung erstellen (Lehrer-Laptop, nimmt KEIN Audio auf)</h2>
   <button id="btn-create">Sitzung erstellen</button>
   <div id="created-info" class="hidden">
     <div class="code" id="display-code"></div>
-    <div class="status">Auf dem Handy (Schueler B) im Browser oeffnen:</div>
+    <div class="status">Beide Schueler oeffnen auf ihrem EIGENEN Handy:</div>
     <div class="status"><b id="join-url"></b></div>
-    <div class="status" id="status-host-wait">Warte, bis sich das Handy verbindet...</div>
+    <div class="status" id="status-control-wait">Warte, bis sich beide Handys verbinden...</div>
   </div>
 </div>
 
-<!-- GUEST: Beitreten -->
-<div class="card hidden" id="card-guest-join">
+<!-- PHONE: Beitreten -->
+<div class="card hidden" id="card-phone-join">
   <h2>Sitzung beitreten (Schueler-Handy)</h2>
-  <div class="status">Code: <b id="guest-code-display"></b></div>
+  <div class="status">Code: <b id="phone-code-display"></b></div>
   <button id="btn-join">Beitreten</button>
-  <div class="status" id="status-guest-join"></div>
+  <div class="status" id="status-phone-join"></div>
 </div>
 
-<!-- Beide: Start -->
+<!-- Beide: Bereit / Impulskarten -->
 <div class="card hidden" id="card-start">
   <h2>Teil 2 — Bereit</h2>
+  <div id="my-role" class="status hidden"></div>
   <div id="impulskarten" class="hidden"></div>
   <button id="btn-start" class="hidden">Teil 2 starten (3 Min)</button>
   <div class="status" id="status-start"></div>
@@ -67,14 +69,14 @@ button:disabled { background:#aaa; cursor:default; }
   <div class="status" id="status-recording">Sprecht jetzt - Du-Form!</div>
 </div>
 
-<!-- Transkript dieses Geraets -->
+<!-- Transkript dieses Geraets (nur Handy) -->
 <div class="card hidden" id="card-own-transcript">
   <h2>Eigenes Transkript</h2>
   <div class="transcript" id="own-transcript"></div>
   <div class="status" id="status-own"></div>
 </div>
 
-<!-- Ergebnis (nur Host) -->
+<!-- Ergebnis (nur Laptop) -->
 <div class="card hidden" id="card-result">
   <h2>Ergebnis</h2>
   <div class="status" id="status-result"></div>
@@ -83,9 +85,8 @@ button:disabled { background:#aaa; cursor:default; }
 </div>
 
 <script>
-const ROLE = "{{ role }}";
+const ROLE = "{{ role }}"; // "control" (Laptop) oder "phone" (Schueler-Handy)
 const PRESET_CODE = "{{ preset_code }}";
-const CHANNEL = ROLE === "host" ? "a" : "b";
 
 let groqKey = localStorage.getItem("groqKey") || "";
 document.getElementById("groqKey").value = groqKey;
@@ -93,13 +94,16 @@ document.getElementById("groqKey").addEventListener("change", e => {
   groqKey = e.target.value.trim();
   localStorage.setItem("groqKey", groqKey);
 });
+document.getElementById("key-hint").textContent = ROLE === "control"
+  ? "Dieser Key wird NUR fuer die abschliessende Bewertung (Text) genutzt, nicht fuer Audio."
+  : "Dieser Key wird genutzt, um DEINE Aufnahme zu transkribieren. Bleibt nur auf diesem Handy.";
 
 let CODE = PRESET_CODE || null;
+let MY_CHANNEL = null; // nur fuer Rolle "phone": "a" oder "b"
 let pollHandle = null;
 let mediaRecorder, chunks = [];
-let speakerLabel = ROLE === "host" ? "Schueler A" : "Schueler B";
+let armedHandled = false;
 
-// Hartcodierte Impulskarten-Paare (Platzhalter - spaeter aus Impulskarten_T2_Uebung.docx uebernehmen)
 const IMPULSPAARE = [
   { a: "Mein Arbeitsweg dauert jeden Tag ueber eine Stunde, das nervt total. Wie ist das bei dir?",
     b: "Was machst du normalerweise am Wochenende?" },
@@ -124,8 +128,9 @@ async function apiPost(path, body) {
   return r.json();
 }
 
-// --- HOST: Sitzung erstellen ---
-if (ROLE === "host") {
+// --- CONTROL (Laptop) ---
+if (ROLE === "control") {
+  document.getElementById("card-control-create").classList.remove("hidden");
   document.getElementById("btn-create").addEventListener("click", async () => {
     const res = await apiPost("/api/create");
     CODE = res.code;
@@ -135,12 +140,20 @@ if (ROLE === "host") {
     document.getElementById("btn-create").disabled = true;
     pollSession();
   });
-} else {
-  document.getElementById("card-guest-join").classList.remove("hidden");
-  document.getElementById("guest-code-display").textContent = CODE || "(kein Code)";
+}
+
+// --- PHONE (Schueler) ---
+if (ROLE === "phone") {
+  document.getElementById("card-phone-join").classList.remove("hidden");
+  document.getElementById("phone-code-display").textContent = CODE || "(kein Code)";
   document.getElementById("btn-join").addEventListener("click", async () => {
-    await apiPost(`/api/session/${CODE}/join`);
-    document.getElementById("status-guest-join").textContent = "Beigetreten. Warte auf Lehrer-Laptop...";
+    const res = await apiPost(`/api/session/${CODE}/join`);
+    if (res.error) {
+      document.getElementById("status-phone-join").textContent = "Fehler: " + res.error;
+      return;
+    }
+    MY_CHANNEL = res.channel;
+    document.getElementById("status-phone-join").textContent = `Beigetreten als Schueler ${MY_CHANNEL.toUpperCase()}. Warte auf Lehrer-Laptop...`;
     document.getElementById("btn-join").disabled = true;
     pollSession();
   });
@@ -155,23 +168,14 @@ function pollSession() {
   }, 800);
 }
 
-let armedHandled = false;
-let lastStatus = null;
-
 function handleSessionUpdate(s) {
-  if (s.status !== lastStatus) {
-    lastStatus = s.status;
-  }
-  if (ROLE === "host" && s.status === "ready" && document.getElementById("card-start").classList.contains("hidden")) {
-    document.getElementById("status-host-wait").textContent = "Handy verbunden!";
+  if (s.status === "ready" && document.getElementById("card-start").classList.contains("hidden")) {
+    if (ROLE === "control") document.getElementById("status-control-wait").textContent = "Beide Handys verbunden!";
     showStartCard();
   }
   if (s.status === "armed" && !armedHandled) {
     armedHandled = true;
     scheduleStart(s.start_at, s.duration);
-  }
-  if (ROLE === "host" && s.status === "done" && document.getElementById("card-result").classList.contains("hidden") === false && !window._evalStarted) {
-    // handled separately after own submit; see below
   }
 }
 
@@ -182,12 +186,20 @@ function showStartCard() {
   const box = document.getElementById("impulskarten");
   box.classList.remove("hidden");
   box.innerHTML = `<div class="frage"><b>Schueler A:</b> ${pair.a}</div><div class="frage"><b>Schueler B:</b> ${pair.b}</div>`;
-  if (ROLE === "host") {
+
+  if (ROLE === "phone") {
+    const roleDiv = document.getElementById("my-role");
+    roleDiv.classList.remove("hidden");
+    roleDiv.innerHTML = `Du bist <span class="badge">Schueler ${MY_CHANNEL.toUpperCase()}</span> — deine Karte: ${MY_CHANNEL === "a" ? pair.a : pair.b}`;
+  }
+
+  if (ROLE === "control") {
     document.getElementById("btn-start").classList.remove("hidden");
     document.getElementById("btn-start").addEventListener("click", async () => {
       document.getElementById("btn-start").disabled = true;
       await apiPost(`/api/session/${CODE}/start`, { duration: 180 });
     });
+    document.getElementById("status-start").textContent = "Klicke Start, wenn beide bereit sind.";
   } else {
     document.getElementById("status-start").textContent = "Warte auf Start durch Lehrer-Laptop...";
   }
@@ -196,7 +208,31 @@ function showStartCard() {
 function scheduleStart(startAtEpoch, duration) {
   const delayMs = Math.max(0, startAtEpoch * 1000 - Date.now());
   document.getElementById("status-start").textContent = `Start in ${Math.round(delayMs/1000)} Sek...`;
-  setTimeout(() => beginRecording(duration), delayMs);
+  setTimeout(() => {
+    if (ROLE === "phone") {
+      beginRecording(duration);
+    } else {
+      beginControlWait(duration);
+    }
+  }, delayMs);
+}
+
+// Laptop zeigt nur einen Countdown an, nimmt aber nichts auf.
+function beginControlWait(duration) {
+  document.getElementById("card-start").classList.add("hidden");
+  document.getElementById("card-recording").classList.remove("hidden");
+  document.getElementById("status-recording").textContent = "Beide Handys nehmen auf - bitte warten...";
+  let remaining = duration;
+  document.getElementById("timer").textContent = fmtTime(remaining);
+  const interval = setInterval(() => {
+    remaining--;
+    document.getElementById("timer").textContent = fmtTime(Math.max(0,remaining));
+    if (remaining <= 0) {
+      clearInterval(interval);
+      document.getElementById("card-recording").classList.add("hidden");
+      waitForBothAndEvaluate();
+    }
+  }, 1000);
 }
 
 async function beginRecording(duration) {
@@ -233,13 +269,8 @@ async function stopAndTranscribe(stream) {
     const result = await transcribeVerbose(blob);
     document.getElementById("own-transcript").textContent = result.text;
     document.getElementById("status-own").textContent = "Sende an Sitzung...";
-    await apiPost(`/api/session/${CODE}/transcript/${CHANNEL}`, { text: result.text, segments: result.segments });
-    document.getElementById("status-own").textContent = "Fertig.";
-    if (ROLE === "host") {
-      waitForBothAndEvaluate();
-    } else {
-      document.getElementById("status-own").textContent += " Bitte beim Lehrer-Laptop weiterschauen.";
-    }
+    await apiPost(`/api/session/${CODE}/transcript/${MY_CHANNEL}`, { text: result.text, segments: result.segments });
+    document.getElementById("status-own").textContent = "Fertig. Bitte beim Lehrer-Laptop weiterschauen.";
   } catch (e) {
     document.getElementById("status-own").textContent = "Fehler: " + e.message;
   }

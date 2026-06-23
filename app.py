@@ -1,11 +1,13 @@
 """
-Teil-2-Raum-Prototyp: synchronisiert Aufnahme-Start zwischen Laptop (Host) und
-Handy (Guest), damit zwei Sprecher getrennte Audiokanaele bekommen.
+Teil-2-Raum-Prototyp: Lehrer-Laptop ist nur Steuerzentrale (zeigt Code,
+Impulskarten, startet die Sitzung, zeigt am Ende das Ergebnis) - er nimmt
+KEIN Audio auf. Beide Schueler sprechen jeweils in ihr EIGENES Handy
+(Kanal A und B), synchron gestartet ueber diesen Server.
 
-Der Server speichert NIE Audio oder Groq-Keys - jedes Geraet transkribiert
-lokal mit seinem eigenen Key (gleiches Prinzip wie teil1_prototyp.html) und
-schickt nur den Text + Segment-Zeiten an den Server. Der Host fuehrt am Ende
-den Merge + die Bewertung (eigener Groq-Call) durch.
+Der Server speichert NIE Audio oder Groq-Keys - jedes Handy transkribiert
+lokal mit seinem eigenen Key und schickt nur den Text + Segment-Zeiten an
+den Server. Der Laptop holt sich am Ende beide Transkripte, merged sie und
+ruft mit seinem EIGENEN Key die Bewertung auf (reiner Text-Call, kein Audio).
 """
 import random
 import time
@@ -33,13 +35,13 @@ def _cleanup():
 
 
 @app.route("/")
-def host_page():
-    return render_template("index.html", role="host", preset_code="")
+def control_page():
+    return render_template("index.html", role="control", preset_code="")
 
 
 @app.route("/join/<code>")
-def guest_page(code):
-    return render_template("index.html", role="guest", preset_code=code)
+def phone_page(code):
+    return render_template("index.html", role="phone", preset_code=code)
 
 
 @app.route("/api/create", methods=["POST"])
@@ -48,11 +50,11 @@ def api_create():
     code = _new_code()
     SESSIONS[code] = {
         "created_at": time.time(),
-        "guest_joined": False,
-        "status": "waiting_guest",  # waiting_guest -> ready -> armed -> recording -> done
+        "joined": {"a": False, "b": False},
+        "status": "waiting_phones",  # waiting_phones -> ready -> armed -> done
         "start_at": None,
         "duration": None,
-        "transcripts": {},  # "a" (host) / "b" (guest) -> {text, segments}
+        "transcripts": {},  # "a" / "b" -> {text, segments}
     }
     return jsonify({"code": code})
 
@@ -70,10 +72,16 @@ def api_join(code):
     s = SESSIONS.get(code)
     if not s:
         return jsonify({"error": "not_found"}), 404
-    s["guest_joined"] = True
-    if s["status"] == "waiting_guest":
+    if not s["joined"]["a"]:
+        channel = "a"
+    elif not s["joined"]["b"]:
+        channel = "b"
+    else:
+        return jsonify({"error": "full"}), 409
+    s["joined"][channel] = True
+    if s["joined"]["a"] and s["joined"]["b"]:
         s["status"] = "ready"
-    return jsonify(s)
+    return jsonify({"channel": channel, "session": s})
 
 
 @app.route("/api/session/<code>/start", methods=["POST"])
@@ -84,7 +92,7 @@ def api_start(code):
     body = request.get_json(force=True)
     duration = int(body.get("duration", 180))
     s["duration"] = duration
-    s["start_at"] = time.time() + 3.0  # 3 Sek. Vorlauf, damit beide Geraete rechtzeitig starten
+    s["start_at"] = time.time() + 3.0  # 3 Sek. Vorlauf, damit beide Handys rechtzeitig starten
     s["status"] = "armed"
     s["transcripts"] = {}
     return jsonify(s)
