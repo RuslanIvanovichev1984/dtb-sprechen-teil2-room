@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DTB B2 — Sprechen Teil 2 Raum-Prototyp</title>
+<style>
+body { font-family: 'Segoe UI', sans-serif; max-width: 760px; margin: 30px auto; padding: 0 16px; background:#f0f4f8; color:#222; }
+h1 { color:#1F3864; font-size:20px; }
+h2 { color:#1F3864; font-size:16px; margin-top:28px; }
+.card { background:#fff; border-radius:8px; padding:18px 22px; margin-bottom:18px; box-shadow:0 2px 6px rgba(0,0,0,.08); }
+label { font-weight:600; font-size:13px; display:block; margin-bottom:4px; }
+input[type=text] { width:100%; padding:8px; border:1px solid #ccc; border-radius:5px; font-size:14px; margin-bottom:10px; }
+button { background:#1F3864; color:#fff; border:none; padding:10px 16px; border-radius:6px; font-size:14px; cursor:pointer; margin-right:8px; }
+button:disabled { background:#aaa; cursor:default; }
+.status { font-size:13px; color:#777; margin-top:6px; }
+.code { font-size:32px; font-weight:700; letter-spacing:4px; color:#1F3864; text-align:center; margin:10px 0; }
+.frage { background:#e3f2fd; border:1px solid #90caf9; border-radius:6px; padding:10px 14px; font-size:14px; margin:8px 0; }
+.timer { font-weight:700; color:#c62828; font-size:22px; }
+.transcript { background:#fffde7; border:1px solid #f9a825; border-radius:6px; padding:10px 14px; font-size:13px; white-space:pre-wrap; margin-top:8px; }
+.eval { white-space:pre-wrap; font-size:14px; line-height:1.5; }
+.hidden { display:none; }
+</style>
+</head>
+<body>
+
+<h1>DTB B2 — Sprechen Teil 2 (Raum-Prototyp)</h1>
+
+<div class="card">
+  <label for="groqKey">Groq API-Key (gsk_...)</label>
+  <input type="text" id="groqKey" placeholder="gsk_...">
+  <div class="status">Wird nur lokal auf diesem Geraet gespeichert, nie an den Server geschickt.</div>
+</div>
+
+<!-- HOST: Sitzung erstellen -->
+<div class="card" id="card-host-create">
+  <h2>Sitzung erstellen (Lehrer-Laptop)</h2>
+  <button id="btn-create">Sitzung erstellen</button>
+  <div id="created-info" class="hidden">
+    <div class="code" id="display-code"></div>
+    <div class="status">Auf dem Handy (Schueler B) im Browser oeffnen:</div>
+    <div class="status"><b id="join-url"></b></div>
+    <div class="status" id="status-host-wait">Warte, bis sich das Handy verbindet...</div>
+  </div>
+</div>
+
+<!-- GUEST: Beitreten -->
+<div class="card hidden" id="card-guest-join">
+  <h2>Sitzung beitreten (Schueler-Handy)</h2>
+  <div class="status">Code: <b id="guest-code-display"></b></div>
+  <button id="btn-join">Beitreten</button>
+  <div class="status" id="status-guest-join"></div>
+</div>
+
+<!-- Beide: Start -->
+<div class="card hidden" id="card-start">
+  <h2>Teil 2 — Bereit</h2>
+  <div id="impulskarten" class="hidden"></div>
+  <button id="btn-start" class="hidden">Teil 2 starten (3 Min)</button>
+  <div class="status" id="status-start"></div>
+</div>
+
+<!-- Aufnahme laeuft -->
+<div class="card hidden" id="card-recording">
+  <h2>Aufnahme laeuft</h2>
+  <div class="timer" id="timer">03:00</div>
+  <div class="status" id="status-recording">Sprecht jetzt - Du-Form!</div>
+</div>
+
+<!-- Transkript dieses Geraets -->
+<div class="card hidden" id="card-own-transcript">
+  <h2>Eigenes Transkript</h2>
+  <div class="transcript" id="own-transcript"></div>
+  <div class="status" id="status-own"></div>
+</div>
+
+<!-- Ergebnis (nur Host) -->
+<div class="card hidden" id="card-result">
+  <h2>Ergebnis</h2>
+  <div class="status" id="status-result"></div>
+  <div class="transcript hidden" id="merged-transcript"></div>
+  <div class="eval" id="eval-result"></div>
+</div>
+
+<script>
+const ROLE = "{{ role }}";
+const PRESET_CODE = "{{ preset_code }}";
+const CHANNEL = ROLE === "host" ? "a" : "b";
+
+let groqKey = localStorage.getItem("groqKey") || "";
+document.getElementById("groqKey").value = groqKey;
+document.getElementById("groqKey").addEventListener("change", e => {
+  groqKey = e.target.value.trim();
+  localStorage.setItem("groqKey", groqKey);
+});
+
+let CODE = PRESET_CODE || null;
+let pollHandle = null;
+let mediaRecorder, chunks = [];
+let speakerLabel = ROLE === "host" ? "Schueler A" : "Schueler B";
+
+// Hartcodierte Impulskarten-Paare (Platzhalter - spaeter aus Impulskarten_T2_Uebung.docx uebernehmen)
+const IMPULSPAARE = [
+  { a: "Mein Arbeitsweg dauert jeden Tag ueber eine Stunde, das nervt total. Wie ist das bei dir?",
+    b: "Was machst du normalerweise am Wochenende?" },
+  { a: "Ich war letzten Sommer im Urlaub total gestresst, weil alles schiefgelaufen ist. Wie war dein letzter Urlaub?",
+    b: "Wie haltst du Kontakt zu deiner Familie, wenn du viel arbeitest?" },
+  { a: "Bei uns im Buero ist es momentan richtig stressig, alle sind genervt. Wie ist die Stimmung bei euch?",
+    b: "Kochst du gern, oder bestellst du lieber etwas?" }
+];
+
+function fmtTime(s) {
+  const m = Math.floor(s/60).toString().padStart(2,"0");
+  const sec = (s%60).toString().padStart(2,"0");
+  return `${m}:${sec}`;
+}
+
+async function apiGet(path) {
+  const r = await fetch(path);
+  return r.json();
+}
+async function apiPost(path, body) {
+  const r = await fetch(path, { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify(body||{}) });
+  return r.json();
+}
+
+// --- HOST: Sitzung erstellen ---
+if (ROLE === "host") {
+  document.getElementById("btn-create").addEventListener("click", async () => {
+    const res = await apiPost("/api/create");
+    CODE = res.code;
+    document.getElementById("display-code").textContent = CODE;
+    document.getElementById("join-url").textContent = window.location.origin + "/join/" + CODE;
+    document.getElementById("created-info").classList.remove("hidden");
+    document.getElementById("btn-create").disabled = true;
+    pollSession();
+  });
+} else {
+  document.getElementById("card-guest-join").classList.remove("hidden");
+  document.getElementById("guest-code-display").textContent = CODE || "(kein Code)";
+  document.getElementById("btn-join").addEventListener("click", async () => {
+    await apiPost(`/api/session/${CODE}/join`);
+    document.getElementById("status-guest-join").textContent = "Beigetreten. Warte auf Lehrer-Laptop...";
+    document.getElementById("btn-join").disabled = true;
+    pollSession();
+  });
+}
+
+function pollSession() {
+  if (pollHandle) clearInterval(pollHandle);
+  pollHandle = setInterval(async () => {
+    const s = await apiGet(`/api/session/${CODE}`);
+    if (s.error) return;
+    handleSessionUpdate(s);
+  }, 800);
+}
+
+let armedHandled = false;
+let lastStatus = null;
+
+function handleSessionUpdate(s) {
+  if (s.status !== lastStatus) {
+    lastStatus = s.status;
+  }
+  if (ROLE === "host" && s.status === "ready" && document.getElementById("card-start").classList.contains("hidden")) {
+    document.getElementById("status-host-wait").textContent = "Handy verbunden!";
+    showStartCard();
+  }
+  if (s.status === "armed" && !armedHandled) {
+    armedHandled = true;
+    scheduleStart(s.start_at, s.duration);
+  }
+  if (ROLE === "host" && s.status === "done" && document.getElementById("card-result").classList.contains("hidden") === false && !window._evalStarted) {
+    // handled separately after own submit; see below
+  }
+}
+
+function showStartCard() {
+  document.getElementById("card-start").classList.remove("hidden");
+  const pair = IMPULSPAARE[Math.floor(Math.random() * IMPULSPAARE.length)];
+  window._chosenPair = pair;
+  const box = document.getElementById("impulskarten");
+  box.classList.remove("hidden");
+  box.innerHTML = `<div class="frage"><b>Schueler A:</b> ${pair.a}</div><div class="frage"><b>Schueler B:</b> ${pair.b}</div>`;
+  if (ROLE === "host") {
+    document.getElementById("btn-start").classList.remove("hidden");
+    document.getElementById("btn-start").addEventListener("click", async () => {
+      document.getElementById("btn-start").disabled = true;
+      await apiPost(`/api/session/${CODE}/start`, { duration: 180 });
+    });
+  } else {
+    document.getElementById("status-start").textContent = "Warte auf Start durch Lehrer-Laptop...";
+  }
+}
+
+function scheduleStart(startAtEpoch, duration) {
+  const delayMs = Math.max(0, startAtEpoch * 1000 - Date.now());
+  document.getElementById("status-start").textContent = `Start in ${Math.round(delayMs/1000)} Sek...`;
+  setTimeout(() => beginRecording(duration), delayMs);
+}
+
+async function beginRecording(duration) {
+  document.getElementById("card-start").classList.add("hidden");
+  document.getElementById("card-recording").classList.remove("hidden");
+  chunks = [];
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  mediaRecorder = new MediaRecorder(stream);
+  mediaRecorder.ondataavailable = e => chunks.push(e.data);
+  mediaRecorder.start();
+  let remaining = duration;
+  document.getElementById("timer").textContent = fmtTime(remaining);
+  const interval = setInterval(() => {
+    remaining--;
+    document.getElementById("timer").textContent = fmtTime(Math.max(0,remaining));
+    if (remaining <= 0) {
+      clearInterval(interval);
+      stopAndTranscribe(stream);
+    }
+  }, 1000);
+}
+
+async function stopAndTranscribe(stream) {
+  document.getElementById("status-recording").textContent = "Stoppe Aufnahme...";
+  const blob = await new Promise(resolve => {
+    mediaRecorder.onstop = () => resolve(new Blob(chunks, { type: "audio/webm" }));
+    mediaRecorder.stop();
+  });
+  stream.getTracks().forEach(t => t.stop());
+  document.getElementById("card-recording").classList.add("hidden");
+  document.getElementById("card-own-transcript").classList.remove("hidden");
+  document.getElementById("status-own").textContent = "Transkribiere mit Whisper...";
+  try {
+    const result = await transcribeVerbose(blob);
+    document.getElementById("own-transcript").textContent = result.text;
+    document.getElementById("status-own").textContent = "Sende an Sitzung...";
+    await apiPost(`/api/session/${CODE}/transcript/${CHANNEL}`, { text: result.text, segments: result.segments });
+    document.getElementById("status-own").textContent = "Fertig.";
+    if (ROLE === "host") {
+      waitForBothAndEvaluate();
+    } else {
+      document.getElementById("status-own").textContent += " Bitte beim Lehrer-Laptop weiterschauen.";
+    }
+  } catch (e) {
+    document.getElementById("status-own").textContent = "Fehler: " + e.message;
+  }
+}
+
+async function transcribeVerbose(blob) {
+  const fd = new FormData();
+  fd.append("file", blob, "audio.webm");
+  fd.append("model", "whisper-large-v3");
+  fd.append("language", "de");
+  fd.append("response_format", "verbose_json");
+  fd.append("timestamp_granularities[]", "segment");
+  const resp = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", {
+    method: "POST",
+    headers: { "Authorization": "Bearer " + groqKey },
+    body: fd
+  });
+  if (!resp.ok) throw new Error("Whisper-Fehler: " + await resp.text());
+  const json = await resp.json();
+  const segments = (json.segments || []).map(s => ({ start: s.start, end: s.end, text: s.text.trim() }));
+  return { text: (json.text || "").trim(), segments };
+}
+
+async function chat(messages, jsonMode) {
+  const body = { model: "llama-3.3-70b-versatile", messages };
+  if (jsonMode) body.response_format = { type: "json_object" };
+  const resp = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    method: "POST",
+    headers: { "Authorization": "Bearer " + groqKey, "Content-Type": "application/json" },
+    body: JSON.stringify(body)
+  });
+  if (!resp.ok) throw new Error("LLM-Fehler: " + await resp.text());
+  const json = await resp.json();
+  return json.choices[0].message.content;
+}
+
+async function waitForBothAndEvaluate() {
+  document.getElementById("card-result").classList.remove("hidden");
+  document.getElementById("status-result").textContent = "Warte auf beide Transkripte...";
+  const checker = setInterval(async () => {
+    const s = await apiGet(`/api/session/${CODE}`);
+    if (s.status === "done" && !window._evalStarted) {
+      window._evalStarted = true;
+      clearInterval(checker);
+      await runEvaluation(s);
+    }
+  }, 800);
+}
+
+function mergeTranscripts(s) {
+  const a = (s.transcripts.a.segments || []).map(seg => ({ ...seg, speaker: "Schueler A" }));
+  const b = (s.transcripts.b.segments || []).map(seg => ({ ...seg, speaker: "Schueler B" }));
+  const merged = a.concat(b).sort((x,y) => x.start - y.start);
+  return merged.map(seg => `[${fmtTime(Math.round(seg.start))}] ${seg.speaker}: ${seg.text}`).join("\n");
+}
+
+const TEIL2_PROMPT = `
+Du bist ein lizenzierter Pruefer/Assessor fuer "Deutsch-Test fuer den Beruf B2" (DTB B2, BAMF/telc), Sprechen Teil 2 (Pausengespraech / Smalltalk, Du-Form Pflicht, ca. 3 Minuten, zwei Lernende sprechen ueber von Impulskarten ausgeloeste Themen).
+
+Du bekommst ein zusammengefuegtes, chronologisches Transkript von Schueler A und Schueler B (automatisch transkribiert, kann kleine Fehler enthalten).
+
+Bewerte JEDEN Schueler EINZELN nach folgenden Kriterien (A/B/C/D, gleiche Logik wie offizielle DTB-B2-Deskriptoren):
+- K-I Kommunikative Aufgabenbewaeltigung: Hat der/die Schueler die eigene Impulskarte sinnvoll eingebracht, in der Du-Form gesprochen, natuerlich und nicht auswendig gelernt reagiert, auf den Partner eingegangen (Rueckfragen, Reaktion)?
+- K-II Aussprache/Intonation: NUR aus dem Transkript ableitbar (z.B. haeufige Selbstkorrekturen, abgebrochene Saetze) - markiere im Feedback klar, dass echte Aussprache aus Text nicht zuverlaessig pruefbar ist.
+- K-III Formale Richtigkeit (Grammatik)
+- K-IV Spektrum sprachlicher Mittel (Wortschatz, Satzbau-Vielfalt)
+
+Wichtige Regeln: Sie-Form statt Du-Form ist ein klarer Mangel bei K-I. Reine Ja/Nein-Antworten ohne Begruendung/Rueckfrage sind ein Mangel bei K-I.
+
+Gib NUR folgendes JSON zurueck (kein Markdown):
+{
+  "schueler_a": {"ki":{"stufe":"A/B/C/D","kommentar":"..."}, "kii":{"stufe":"...","kommentar":"..."}, "kiii":{"stufe":"...","kommentar":"..."}, "kiv":{"stufe":"...","kommentar":"..."}, "bestanden_einschaetzung": true/false, "feedback":"kurzes, motivierendes aber ehrliches Feedback auf Deutsch"},
+  "schueler_b": { ... gleiche Struktur ... }
+}
+`;
+
+async function runEvaluation(s) {
+  const merged = mergeTranscripts(s);
+  document.getElementById("merged-transcript").textContent = merged;
+  document.getElementById("merged-transcript").classList.remove("hidden");
+  document.getElementById("status-result").textContent = "Bewerte...";
+  try {
+    const raw = await chat([
+      { role: "system", content: TEIL2_PROMPT },
+      { role: "user", content: merged }
+    ], true);
+    const result = JSON.parse(raw);
+    document.getElementById("eval-result").textContent = JSON.stringify(result, null, 2);
+    document.getElementById("status-result").textContent = "Fertig.";
+  } catch (e) {
+    document.getElementById("status-result").textContent = "Fehler: " + e.message;
+  }
+}
+</script>
+</body>
+</html>
