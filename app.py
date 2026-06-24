@@ -89,6 +89,9 @@ def api_start(code):
     s = SESSIONS.get(code)
     if not s:
         return jsonify({"error": "not_found"}), 404
+    if s["status"] != "ready":
+        # Schon gestartet (z.B. beide Schueler haben fast gleichzeitig gedrueckt) - ignorieren.
+        return jsonify(s)
     body = request.get_json(force=True)
     duration = int(body.get("duration", 180))
     s["duration"] = duration
