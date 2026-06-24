@@ -52,6 +52,8 @@ button:disabled { background:#aaa; cursor:default; }
 <div class="card hidden" id="card-phone-join">
   <h2>Sitzung beitreten (Schueler-Handy)</h2>
   <div class="status">Code: <b id="phone-code-display"></b></div>
+  <label for="myName">Dein Name</label>
+  <input type="text" id="myName" placeholder="Vorname">
   <button id="btn-join">Beitreten</button>
   <div class="status" id="status-phone-join"></div>
 </div>
@@ -105,6 +107,7 @@ document.getElementById("key-hint").textContent = ROLE === "control"
 
 let CODE = PRESET_CODE || null;
 let MY_CHANNEL = null; // nur fuer Rolle "phone": "a" oder "b"
+let MY_NAME = null;
 let pollHandle = null;
 let armedHandled = false;
 
@@ -160,13 +163,15 @@ if (ROLE === "phone") {
   document.getElementById("card-phone-join").classList.remove("hidden");
   document.getElementById("phone-code-display").textContent = CODE || "(kein Code)";
   document.getElementById("btn-join").addEventListener("click", async () => {
-    const res = await apiPost(`/api/session/${CODE}/join`);
+    const name = document.getElementById("myName").value.trim();
+    const res = await apiPost(`/api/session/${CODE}/join`, { name });
     if (res.error) {
       document.getElementById("status-phone-join").textContent = "Fehler: " + res.error;
       return;
     }
     MY_CHANNEL = res.channel;
-    document.getElementById("status-phone-join").textContent = `Beigetreten als Schueler ${MY_CHANNEL.toUpperCase()}. Warte auf Lehrer-Laptop...`;
+    MY_NAME = (res.session.names && res.session.names[MY_CHANNEL]) || name || `Schueler ${MY_CHANNEL.toUpperCase()}`;
+    document.getElementById("status-phone-join").textContent = `Beigetreten als ${MY_NAME}. Warte auf Partner/Lehrer...`;
     document.getElementById("btn-join").disabled = true;
     pollSession();
   });
@@ -190,6 +195,43 @@ function handleSessionUpdate(s) {
     armedHandled = true;
     scheduleStart(s.start_at, s.duration);
   }
+  if (s.status === "done") {
+    handleDone(s);
+  }
+}
+
+// Laeuft auf JEDEM Geraet (Laptop oder Handy), das gerade die Seite offen hat - wer zuerst
+// status "done" sieht und noch kein Eval auf dem Server findet, macht den Bewertungs-Call
+// mit seinem EIGENEN Groq-Key. Sobald s.eval auf dem Server steht, macht niemand mehr etwas,
+// nur der Lehrer (ROLE control) zeigt das Ergebnis + Download-Link an.
+async function handleDone(s) {
+  if (!window._doneShown) {
+    window._doneShown = true;
+    document.getElementById("card-result").classList.remove("hidden");
+    document.getElementById("status-result").textContent = ROLE === "control"
+      ? "Beide Transkripte da. Bewerte..."
+      : "Fertig. Der Lehrer bekommt das Ergebnis.";
+  }
+  if (s.eval) {
+    if (ROLE === "control" && !window._evalShown) {
+      window._evalShown = true;
+      document.getElementById("merged-transcript").textContent = mergeTranscripts(s);
+      document.getElementById("merged-transcript").classList.remove("hidden");
+      document.getElementById("eval-result").textContent = JSON.stringify(s.eval, null, 2);
+      document.getElementById("status-result").textContent = "Fertig.";
+      const dl = document.createElement("a");
+      dl.href = `/api/session/${CODE}/docx`;
+      dl.textContent = "Word-Datei herunterladen";
+      dl.style.display = "inline-block";
+      dl.style.marginTop = "10px";
+      document.getElementById("card-result").appendChild(dl);
+    }
+    return;
+  }
+  if (!window._evalAttempted) {
+    window._evalAttempted = true;
+    await runEvaluation(s);
+  }
 }
 
 function showStartCard() {
@@ -203,7 +245,7 @@ function showStartCard() {
   if (ROLE === "phone") {
     const roleDiv = document.getElementById("my-role");
     roleDiv.classList.remove("hidden");
-    roleDiv.innerHTML = `Du bist <span class="badge">Schueler ${MY_CHANNEL.toUpperCase()}</span> — deine Karte: ${MY_CHANNEL === "a" ? pair.a : pair.b}`;
+    roleDiv.innerHTML = `Du bist <span class="badge">${MY_NAME}</span> — deine Karte: ${MY_CHANNEL === "a" ? pair.a : pair.b}`;
   }
 
   document.getElementById("btn-start").classList.remove("hidden");
@@ -241,7 +283,6 @@ function beginControlWait(duration) {
     if (remaining <= 0) {
       clearInterval(interval);
       document.getElementById("card-recording").classList.add("hidden");
-      waitForBothAndEvaluate();
     }
   }, 1000);
 }
@@ -369,22 +410,11 @@ async function chat(messages, jsonMode) {
   return json.choices[0].message.content;
 }
 
-async function waitForBothAndEvaluate() {
-  document.getElementById("card-result").classList.remove("hidden");
-  document.getElementById("status-result").textContent = "Warte auf beide Transkripte...";
-  const checker = setInterval(async () => {
-    const s = await apiGet(`/api/session/${CODE}`);
-    if (s.status === "done" && !window._evalStarted) {
-      window._evalStarted = true;
-      clearInterval(checker);
-      await runEvaluation(s);
-    }
-  }, 800);
-}
-
 function mergeTranscripts(s) {
-  const a = (s.transcripts.a.fragments || []).map(f => ({ ...f, speaker: "Schueler A" }));
-  const b = (s.transcripts.b.fragments || []).map(f => ({ ...f, speaker: "Schueler B" }));
+  const aName = (s.names && s.names.a) || "Schueler A";
+  const bName = (s.names && s.names.b) || "Schueler B";
+  const a = (s.transcripts.a.fragments || []).map(f => ({ ...f, speaker: `${aName} (A)` }));
+  const b = (s.transcripts.b.fragments || []).map(f => ({ ...f, speaker: `${bName} (B)` }));
   const merged = a.concat(b).sort((x,y) => x.start - y.start);
   return merged.map(f => `[${fmtTime(Math.round(f.start))}] ${f.speaker}: ${f.text}`).join("\n");
 }
@@ -392,40 +422,44 @@ function mergeTranscripts(s) {
 const TEIL2_PROMPT = `
 Du bist ein lizenzierter Pruefer/Assessor fuer "Deutsch-Test fuer den Beruf B2" (DTB B2, BAMF/telc), Sprechen Teil 2 (Pausengespraech / Smalltalk, Du-Form Pflicht, ca. 3 Minuten, zwei Lernende sprechen ueber von Impulskarten ausgeloeste Themen).
 
-Du bekommst ein zusammengefuegtes, chronologisches Transkript von Schueler A und Schueler B (automatisch transkribiert, kann kleine Fehler enthalten).
+Du bekommst ein zusammengefuegtes, chronologisches Transkript (automatisch transkribiert, kann kleine Fehler enthalten). Jede Zeile beginnt mit [Zeit] Name (A): ... oder Name (B): ... - das (A)/(B) markiert IMMER zuverlaessig, wem die Aeusserung gehoert, auch wenn echte Namen verwendet werden.
 
-Bewerte JEDEN Schueler EINZELN nach folgenden Kriterien (A/B/C/D, gleiche Logik wie offizielle DTB-B2-Deskriptoren):
-- K-I Kommunikative Aufgabenbewaeltigung: Hat der/die Schueler die eigene Impulskarte sinnvoll eingebracht, in der Du-Form gesprochen, natuerlich und nicht auswendig gelernt reagiert, auf den Partner eingegangen (Rueckfragen, Reaktion)?
+Bewerte JEDE Person EINZELN nach folgenden Kriterien (A/B/C/D, gleiche Logik wie offizielle DTB-B2-Deskriptoren):
+- K-I Kommunikative Aufgabenbewaeltigung: Hat die Person die eigene Impulskarte sinnvoll eingebracht, in der Du-Form gesprochen, natuerlich und nicht auswendig gelernt reagiert, auf den Partner eingegangen (Rueckfragen, Reaktion)?
 - K-II Aussprache/Intonation: NUR aus dem Transkript ableitbar (z.B. haeufige Selbstkorrekturen, abgebrochene Saetze) - markiere im Feedback klar, dass echte Aussprache aus Text nicht zuverlaessig pruefbar ist.
 - K-III Formale Richtigkeit (Grammatik)
 - K-IV Spektrum sprachlicher Mittel (Wortschatz, Satzbau-Vielfalt)
 
 Wichtige Regeln: Sie-Form statt Du-Form ist ein klarer Mangel bei K-I. Reine Ja/Nein-Antworten ohne Begruendung/Rueckfrage sind ein Mangel bei K-I.
 
-Gib NUR folgendes JSON zurueck (kein Markdown):
+Gib NUR folgendes JSON zurueck (kein Markdown), schueler_a = Person (A), schueler_b = Person (B):
 {
-  "schueler_a": {"ki":{"stufe":"A/B/C/D","kommentar":"..."}, "kii":{"stufe":"...","kommentar":"..."}, "kiii":{"stufe":"...","kommentar":"..."}, "kiv":{"stufe":"...","kommentar":"..."}, "bestanden_einschaetzung": true/false, "feedback":"kurzes, motivierendes aber ehrliches Feedback auf Deutsch"},
+  "schueler_a": {
+    "ki":{"stufe":"A/B/C/D","kommentar":"..."}, "kii":{"stufe":"...","kommentar":"..."}, "kiii":{"stufe":"...","kommentar":"..."}, "kiv":{"stufe":"...","kommentar":"..."},
+    "bestanden_einschaetzung": true/false,
+    "staerken": ["...", "..."],
+    "verbesserungen": ["...", "..."],
+    "feedback": "ausfuehrliches, konkretes Feedback auf Deutsch: was ist gut gelungen, was fehlt noch, und ob das gezeigte Niveau fuer Teil 2 der DTB-B2-Pruefung ausreicht"
+  },
   "schueler_b": { ... gleiche Struktur ... }
 }
 `;
 
 async function runEvaluation(s) {
   const merged = mergeTranscripts(s);
-  document.getElementById("merged-transcript").textContent = merged;
-  document.getElementById("merged-transcript").classList.remove("hidden");
-  document.getElementById("status-result").textContent = "Bewerte...";
   try {
     const raw = await chat([
       { role: "system", content: TEIL2_PROMPT },
       { role: "user", content: merged }
     ], true);
     const result = JSON.parse(raw);
-    document.getElementById("eval-result").textContent = JSON.stringify(result, null, 2);
-    document.getElementById("status-result").textContent = "Fertig.";
+    await apiPost(`/api/session/${CODE}/eval`, result);
   } catch (e) {
-    document.getElementById("status-result").textContent = "Fehler: " + e.message;
+    window._evalAttempted = false; // naechster Poll-Zyklus darf es erneut versuchen
+    if (ROLE === "control") document.getElementById("status-result").textContent = "Fehler: " + e.message;
   }
 }
+
 </script>
 </body>
 </html>
