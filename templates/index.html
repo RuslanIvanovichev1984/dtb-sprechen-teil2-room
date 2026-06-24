@@ -95,11 +95,12 @@ button:disabled { background:#aaa; cursor:default; }
 const ROLE = "{{ role }}"; // "control" (Laptop) oder "phone" (Schueler-Handy)
 const PRESET_CODE = "{{ preset_code }}";
 
-let groqKey = localStorage.getItem("groqKey") || "";
+const GROQ_KEY_STORAGE = "groqKey_" + ROLE; // getrennt pro Rolle, damit z.B. der Lehrer-Key beim Testen im selben Browser nicht auf der Schueler-Seite auftaucht
+let groqKey = localStorage.getItem(GROQ_KEY_STORAGE) || "";
 document.getElementById("groqKey").value = groqKey;
 document.getElementById("groqKey").addEventListener("change", e => {
   groqKey = e.target.value.trim();
-  localStorage.setItem("groqKey", groqKey);
+  localStorage.setItem(GROQ_KEY_STORAGE, groqKey);
 });
 document.getElementById("key-hint").textContent = ROLE === "control"
   ? "Dieser Key wird NUR fuer die abschliessende Bewertung (Text) genutzt, nicht fuer Audio."
