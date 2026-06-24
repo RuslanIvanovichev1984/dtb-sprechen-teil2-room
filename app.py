@@ -18,6 +18,10 @@ import time
 
 from flask import Flask, jsonify, render_template, request, send_file
 from docx import Document
+from docx.shared import RGBColor
+
+GRUEN = RGBColor(0x2E, 0x7D, 0x32)
+ROT = RGBColor(0xC6, 0x28, 0x28)
 
 app = Flask(__name__)
 
@@ -193,27 +197,32 @@ def api_docx(code):
             ("kiv", "K-IV Spektrum sprachlicher Mittel"),
         ):
             k = res.get(krit, {})
+            stufe = k.get("stufe", "-")
+            bestanden_krit = stufe in ("A", "B")
+            icon = "✅" if bestanden_krit else "❌"
             p = doc.add_paragraph()
-            p.add_run(f"{label}: Stufe {k.get('stufe', '-')}").bold = True
+            r = p.add_run(f"{icon} {label}: Stufe {stufe}")
+            r.bold = True
+            r.font.color.rgb = GRUEN if bestanden_krit else ROT
             doc.add_paragraph(k.get("kommentar", ""))
 
+        bestanden = res.get("bestanden_einschaetzung")
         p = doc.add_paragraph()
-        p.add_run("Einschätzung: ").bold = True
-        p.add_run(
-            "ausreichend für Teil 2"
-            if res.get("bestanden_einschaetzung")
-            else "noch nicht ausreichend für Teil 2"
-        )
+        r = p.add_run("✅ ausreichend für Teil 2" if bestanden else "❌ noch nicht ausreichend für Teil 2")
+        r.bold = True
+        r.font.color.rgb = GRUEN if bestanden else ROT
 
         if res.get("staerken"):
             doc.add_heading("Stärken", level=3)
             for st in res["staerken"]:
-                doc.add_paragraph(st, style="List Bullet")
+                par = doc.add_paragraph(style="List Bullet")
+                par.add_run(st).font.color.rgb = GRUEN
 
         if res.get("verbesserungen"):
             doc.add_heading("Verbesserungsvorschläge", level=3)
             for v in res["verbesserungen"]:
-                doc.add_paragraph(v, style="List Bullet")
+                par = doc.add_paragraph(style="List Bullet")
+                par.add_run(v).font.color.rgb = ROT
 
         doc.add_heading("Feedback", level=3)
         doc.add_paragraph(res.get("feedback", ""))
