@@ -175,7 +175,7 @@ def api_docx(code):
         res = ev.get(key, {})
         doc.add_heading(f"Bewertung — {name}", level=2)
         for krit, label in (
-            ("ki", "K-I Kommunikative Aufgabenbewaeltigung"),
+            ("ki", "K-I Kommunikative Aufgabenbewältigung"),
             ("kii", "K-II Aussprache/Intonation"),
             ("kiii", "K-III Formale Richtigkeit"),
             ("kiv", "K-IV Spektrum sprachlicher Mittel"),
@@ -186,20 +186,20 @@ def api_docx(code):
             doc.add_paragraph(k.get("kommentar", ""))
 
         p = doc.add_paragraph()
-        p.add_run("Einschaetzung: ").bold = True
+        p.add_run("Einschätzung: ").bold = True
         p.add_run(
-            "ausreichend fuer Teil 2"
+            "ausreichend für Teil 2"
             if res.get("bestanden_einschaetzung")
-            else "noch nicht ausreichend fuer Teil 2"
+            else "noch nicht ausreichend für Teil 2"
         )
 
         if res.get("staerken"):
-            doc.add_heading("Staerken", level=3)
+            doc.add_heading("Stärken", level=3)
             for st in res["staerken"]:
                 doc.add_paragraph(st, style="List Bullet")
 
         if res.get("verbesserungen"):
-            doc.add_heading("Verbesserungsvorschlaege", level=3)
+            doc.add_heading("Verbesserungsvorschläge", level=3)
             for v in res["verbesserungen"]:
                 doc.add_paragraph(v, style="List Bullet")
 
