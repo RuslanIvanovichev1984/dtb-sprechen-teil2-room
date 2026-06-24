@@ -23,7 +23,6 @@ button:disabled { background:#aaa; cursor:default; }
 .badge { display:inline-block; background:#1F3864; color:#fff; border-radius:5px; padding:4px 10px; font-size:13px; font-weight:600; }
 .hold-btn { display:block; width:100%; padding:28px; font-size:18px; font-weight:700; border-radius:10px; background:#2e7d32; touch-action:none; -webkit-user-select:none; user-select:none; margin-top:14px; }
 .hold-btn.active { background:#c62828; }
-.fragliste { font-size:12px; color:#555; margin-top:8px; max-height:120px; overflow-y:auto; }
 </style>
 </head>
 <body>
@@ -73,13 +72,12 @@ button:disabled { background:#aaa; cursor:default; }
   <div class="timer" id="timer">03:00</div>
   <button id="btn-hold" class="hold-btn hidden">Halten zum Sprechen</button>
   <div class="status" id="status-recording">Sprecht jetzt - Du-Form!</div>
-  <div class="fragliste hidden" id="fragliste"></div>
 </div>
 
-<!-- Transkript dieses Geraets (nur Handy) -->
+<!-- Nach der Aufnahme (nur Handy) - bewusst OHNE Transkript-Anzeige, damit Lernende
+     waehrend/nach dem Gespraech keine eigene Transkription lesen koennen. -->
 <div class="card hidden" id="card-own-transcript">
-  <h2>Eigenes Transkript</h2>
-  <div class="transcript" id="own-transcript"></div>
+  <h2>Aufnahme abgeschlossen</h2>
   <div class="status" id="status-own"></div>
 </div>
 
@@ -324,9 +322,6 @@ function stopPress() {
         const text = await transcribePlain(blob);
         if (text) {
           fragments.push({ start: startRel, end: endRel, text });
-          const list = document.getElementById("fragliste");
-          list.classList.remove("hidden");
-          list.innerHTML += `<div>[${fmtTime(Math.round(startRel))}] ${text}</div>`;
         }
       } catch (e) {
         console.warn("Transkriptions-Fehler:", e);
@@ -367,7 +362,6 @@ async function finishRecording() {
   document.getElementById("card-recording").classList.add("hidden");
   document.getElementById("card-own-transcript").classList.remove("hidden");
   fragments.sort((a,b) => a.start - b.start);
-  document.getElementById("own-transcript").textContent = fragments.map(f => `[${fmtTime(Math.round(f.start))}] ${f.text}`).join("\n");
   document.getElementById("status-own").textContent = "Sende an Sitzung...";
   try {
     await apiPost(`/api/session/${CODE}/transcript/${MY_CHANNEL}`, { fragments });
