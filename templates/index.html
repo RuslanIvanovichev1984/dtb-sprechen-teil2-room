@@ -69,7 +69,9 @@ button:disabled { background:#aaa; cursor:default; }
 <!-- Aufnahme laeuft -->
 <div class="card hidden" id="card-recording">
   <h2>Aufnahme laeuft</h2>
+  <div id="impulskarten-recording" class="hidden"></div>
   <div class="timer" id="timer">03:00</div>
+  <button id="btn-thema2" class="hidden">Jetzt: Thema 2 vorlesen</button>
   <button id="btn-hold" class="hold-btn hidden">Halten zum Sprechen</button>
   <div class="status" id="status-recording">Sprecht jetzt - Du-Form!</div>
 </div>
@@ -119,14 +121,49 @@ let pressStartRel = null;
 let fragments = [];            // [{start, end, text}] - ein Eintrag pro Knopf-Druck
 let pendingTranscriptions = [];
 
-const IMPULSPAARE = [
-  { a: "Mein Arbeitsweg dauert jeden Tag ueber eine Stunde, das nervt total. Wie ist das bei dir?",
-    b: "Was machst du normalerweise am Wochenende?" },
-  { a: "Ich war letzten Sommer im Urlaub total gestresst, weil alles schiefgelaufen ist. Wie war dein letzter Urlaub?",
-    b: "Wie haltst du Kontakt zu deiner Familie, wenn du viel arbeitest?" },
-  { a: "Bei uns im Buero ist es momentan richtig stressig, alle sind genervt. Wie ist die Stimmung bei euch?",
-    b: "Kochst du gern, oder bestellst du lieber etwas?" }
+// Nur Notfall-Rueckfallebene, falls die LLM-Themengenerierung fehlschlaegt (siehe generateImpulskarten).
+const FALLBACK_PAARE = [
+  { frage: "Was machst du normalerweise am Wochenende?",
+    aussage_mit_frage: "Mein Arbeitsweg dauert jeden Tag ueber eine Stunde, das nervt total. Wie ist das bei dir?" },
+  { frage: "Wie haltst du Kontakt zu deiner Familie, wenn du viel arbeitest?",
+    aussage_mit_frage: "Ich war letzten Sommer im Urlaub total gestresst, weil alles schiefgelaufen ist. Wie war dein letzter Urlaub?" }
 ];
+
+const THEMEN_PROMPT = `
+Du erstellst Impulskarten fuer "Deutsch-Test fuer den Beruf B2" (DTB B2), Sprechen Teil 2 (informelles Pausengespraech zwischen zwei Kollegen/Kolleginnen, Du-Form Pflicht).
+
+Passende Themenbereiche (waehle JEDES MAL ein anderes, sei kreativ, vermeide immer wieder dieselben Standardbeispiele): Arbeitssituation, Arbeitszeiten/Pausen, Freizeitgestaltung am Wochenende, Urlaub, Sport und Bewegung, Kinderbetreuung, Small Talk ueber das Wetter.
+
+Erzeuge fuer EIN gewaehltes Thema zwei verschiedene Gespraechsimpulse:
+1. "frage": eine kurze, direkte W-Frage oder Ja/Nein-Frage in der Du-Form zum Thema.
+2. "aussage_mit_frage": eine kurze persoenliche Aussage/Erfahrung (1 Satz) in der Du-Form, gefolgt von einer Frage an den Partner zum selben Thema, aber einem anderen Aspekt davon.
+
+Schreibe in korrektem Deutsch mit echten Umlauten und Eszett (ä, ö, ü, ß).
+
+Gib NUR folgendes JSON zurueck (kein Markdown):
+{"thema": "Kurzname des Themas", "frage": "...", "aussage_mit_frage": "..."}
+`;
+
+// Wird einmal pro Sitzung vom Lehrer-Geraet (das die Sitzung erstellt) aufgerufen. Welche der
+// beiden Karten Schueler A bzw. B bekommt, wird jedes Mal neu zufaellig entschieden, damit nicht
+// immer dieselbe Person mit der reinen Frage und die andere mit der Aussage-mit-Frage startet.
+async function generateImpulskarten() {
+  let pair;
+  try {
+    const raw = await chat([{ role: "system", content: THEMEN_PROMPT }], true);
+    const result = JSON.parse(raw);
+    pair = { frage: result.frage, aussage_mit_frage: result.aussage_mit_frage };
+  } catch (e) {
+    pair = FALLBACK_PAARE[Math.floor(Math.random() * FALLBACK_PAARE.length)];
+  }
+  const swap = Math.random() < 0.5;
+  const ab = swap
+    ? { a: pair.aussage_mit_frage, b: pair.frage }
+    : { a: pair.frage, b: pair.aussage_mit_frage };
+  try {
+    await apiPost(`/api/session/${CODE}/impulskarten`, ab);
+  } catch (e) { /* naechster Versuch ist nicht vorgesehen - Fallback-Anzeige greift clientseitig */ }
+}
 
 function fmtTime(s) {
   const m = Math.floor(s/60).toString().padStart(2,"0");
@@ -154,6 +191,7 @@ if (ROLE === "control") {
     document.getElementById("created-info").classList.remove("hidden");
     document.getElementById("btn-create").disabled = true;
     pollSession();
+    generateImpulskarten();
   });
 }
 
@@ -187,8 +225,12 @@ function pollSession() {
 
 function handleSessionUpdate(s) {
   if (s.status === "ready" && document.getElementById("card-start").classList.contains("hidden")) {
+    if (!s.impulskarten) {
+      if (ROLE === "control") document.getElementById("status-control-wait").textContent = "Beide verbunden. Generiere Thema...";
+      return; // naechster Poll-Zyklus prueft erneut, sobald die Themen da sind
+    }
     if (ROLE === "control") document.getElementById("status-control-wait").textContent = "Beide Handys verbunden!";
-    showStartCard();
+    showStartCard(s);
   }
   if (s.status === "armed" && !armedHandled) {
     armedHandled = true;
@@ -233,9 +275,9 @@ async function handleDone(s) {
   }
 }
 
-function showStartCard() {
+function showStartCard(s) {
   document.getElementById("card-start").classList.remove("hidden");
-  const pair = IMPULSPAARE[Math.floor(Math.random() * IMPULSPAARE.length)];
+  const pair = s.impulskarten;
   window._chosenPair = pair;
   const box = document.getElementById("impulskarten");
   box.classList.remove("hidden");
@@ -269,10 +311,19 @@ function scheduleStart(startAtEpoch, duration) {
   }, delayMs);
 }
 
+function showImpulskartenRecording() {
+  const pair = window._chosenPair;
+  if (!pair) return;
+  const box = document.getElementById("impulskarten-recording");
+  box.classList.remove("hidden");
+  box.innerHTML = `<div class="frage"><b>Schueler A:</b> ${pair.a}</div><div class="frage"><b>Schueler B:</b> ${pair.b}</div>`;
+}
+
 // Laptop zeigt nur einen Countdown an, nimmt aber nichts auf.
 function beginControlWait(duration) {
   document.getElementById("card-start").classList.add("hidden");
   document.getElementById("card-recording").classList.remove("hidden");
+  showImpulskartenRecording();
   document.getElementById("status-recording").textContent = "Beide Handys nehmen auf - bitte warten...";
   let remaining = duration;
   document.getElementById("timer").textContent = fmtTime(remaining);
@@ -337,6 +388,15 @@ async function beginRecording(duration) {
   document.getElementById("card-start").classList.add("hidden");
   document.getElementById("card-recording").classList.remove("hidden");
   document.getElementById("btn-hold").classList.remove("hidden");
+  showImpulskartenRecording();
+  if (MY_CHANNEL === "b") {
+    const btn = document.getElementById("btn-thema2");
+    btn.classList.remove("hidden");
+    btn.addEventListener("click", () => {
+      btn.disabled = true;
+      btn.textContent = "Thema 2 laeuft";
+    });
+  }
   fragments = [];
   pendingTranscriptions = [];
   micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -356,6 +416,7 @@ async function beginRecording(duration) {
 async function finishRecording() {
   stopPress(); // falls beim Timer-Ende noch gedrueckt
   document.getElementById("btn-hold").classList.add("hidden");
+  document.getElementById("btn-thema2").classList.add("hidden");
   document.getElementById("status-recording").textContent = "Verarbeite letzte Aufnahmen...";
   await Promise.all(pendingTranscriptions);
   micStream.getTracks().forEach(t => t.stop());

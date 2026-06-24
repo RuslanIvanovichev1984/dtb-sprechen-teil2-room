@@ -78,6 +78,7 @@ def api_create():
         "duration": None,
         "transcripts": {},  # "a" / "b" -> {fragments: [{start, end, text}]}
         "eval": None,
+        "impulskarten": None,  # {a, b} - vom Lehrer-Geraet per LLM generiert, ein Thema pro Sitzung
     }
     return jsonify({"code": code})
 
@@ -87,6 +88,17 @@ def api_get(code):
     s = SESSIONS.get(code)
     if not s:
         return jsonify({"error": "not_found"}), 404
+    return jsonify(s)
+
+
+@app.route("/api/session/<code>/impulskarten", methods=["POST"])
+def api_impulskarten(code):
+    s = SESSIONS.get(code)
+    if not s:
+        return jsonify({"error": "not_found"}), 404
+    if not s.get("impulskarten"):
+        body = request.get_json(force=True)
+        s["impulskarten"] = {"a": body.get("a", ""), "b": body.get("b", "")}
     return jsonify(s)
 
 
