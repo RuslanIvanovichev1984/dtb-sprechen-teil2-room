@@ -107,8 +107,7 @@ def api_transcript(code, channel):
         return jsonify({"error": "not_found"}), 404
     body = request.get_json(force=True)
     s["transcripts"][channel] = {
-        "text": body.get("text", ""),
-        "segments": body.get("segments", []),
+        "fragments": body.get("fragments", []),  # [{start, end, text}] - push-to-talk Schnipsel, Schueler-Geraet-Zeit relativ zum Sitzungsstart
     }
     if "a" in s["transcripts"] and "b" in s["transcripts"]:
         s["status"] = "done"

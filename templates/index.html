@@ -21,6 +21,9 @@ button:disabled { background:#aaa; cursor:default; }
 .eval { white-space:pre-wrap; font-size:14px; line-height:1.5; }
 .hidden { display:none; }
 .badge { display:inline-block; background:#1F3864; color:#fff; border-radius:5px; padding:4px 10px; font-size:13px; font-weight:600; }
+.hold-btn { display:block; width:100%; padding:28px; font-size:18px; font-weight:700; border-radius:10px; background:#2e7d32; touch-action:none; -webkit-user-select:none; user-select:none; margin-top:14px; }
+.hold-btn.active { background:#c62828; }
+.fragliste { font-size:12px; color:#555; margin-top:8px; max-height:120px; overflow-y:auto; }
 </style>
 </head>
 <body>
@@ -66,7 +69,9 @@ button:disabled { background:#aaa; cursor:default; }
 <div class="card hidden" id="card-recording">
   <h2>Aufnahme laeuft</h2>
   <div class="timer" id="timer">03:00</div>
+  <button id="btn-hold" class="hold-btn hidden">Halten zum Sprechen</button>
   <div class="status" id="status-recording">Sprecht jetzt - Du-Form!</div>
+  <div class="fragliste hidden" id="fragliste"></div>
 </div>
 
 <!-- Transkript dieses Geraets (nur Handy) -->
@@ -101,8 +106,16 @@ document.getElementById("key-hint").textContent = ROLE === "control"
 let CODE = PRESET_CODE || null;
 let MY_CHANNEL = null; // nur fuer Rolle "phone": "a" oder "b"
 let pollHandle = null;
-let mediaRecorder, chunks = [];
 let armedHandled = false;
+
+// Push-to-talk Zustand (nur Rolle "phone")
+let micStream = null;          // einmal geholt, fuer alle Druecke wiederverwendet
+let sessionStartMs = null;     // wall-clock Start des 3-Min-Fensters, fuer relative Sekunden
+let pressRecorder = null;      // MediaRecorder NUR waehrend ein Knopf-Druck aktiv ist
+let pressChunks = [];
+let pressStartRel = null;
+let fragments = [];            // [{start, end, text}] - ein Eintrag pro Knopf-Druck
+let pendingTranscriptions = [];
 
 const IMPULSPAARE = [
   { a: "Mein Arbeitsweg dauert jeden Tag ueber eine Stunde, das nervt total. Wie ist das bei dir?",
@@ -235,14 +248,64 @@ function beginControlWait(duration) {
   }, 1000);
 }
 
+// Push-to-talk: das Mikrofon nimmt NUR auf, waehrend der Schueler den Knopf gedrueckt haelt.
+// Jeder Druck = eigene kleine Aufnahme -> eigene Whisper-Transkription -> ein Fragment mit
+// echter wall-clock Start/Ende-Zeit (relativ zum Sitzungsstart). Die wall-clock Zeit kommt
+// lokal vom Geraet selbst, NICHT von Whisper - dadurch lassen sich die Fragmente von Schueler A
+// und B spaeter einfach nach .start sortieren und chronologisch interleaven (siehe mergeTranscripts).
+function relSeconds() {
+  return (Date.now() - sessionStartMs) / 1000;
+}
+
+function startPress() {
+  if (pressRecorder || !micStream) return;
+  pressChunks = [];
+  pressStartRel = relSeconds();
+  pressRecorder = new MediaRecorder(micStream);
+  pressRecorder.ondataavailable = e => { if (e.data.size) pressChunks.push(e.data); };
+  pressRecorder.start();
+  document.getElementById("btn-hold").classList.add("active");
+  document.getElementById("status-recording").textContent = "Du sprichst...";
+}
+
+function stopPress() {
+  if (!pressRecorder) return;
+  const rec = pressRecorder;
+  const startRel = pressStartRel;
+  pressRecorder = null;
+  const endRel = relSeconds();
+  document.getElementById("btn-hold").classList.remove("active");
+  document.getElementById("status-recording").textContent = "Knopf halten, um zu sprechen.";
+  const donePromise = new Promise(resolve => {
+    rec.onstop = async () => {
+      if (endRel - startRel < 0.3) { resolve(); return; } // zu kurzer Druck, ignorieren
+      const blob = new Blob(pressChunks, { type: "audio/webm" });
+      try {
+        const text = await transcribePlain(blob);
+        if (text) {
+          fragments.push({ start: startRel, end: endRel, text });
+          const list = document.getElementById("fragliste");
+          list.classList.remove("hidden");
+          list.innerHTML += `<div>[${fmtTime(Math.round(startRel))}] ${text}</div>`;
+        }
+      } catch (e) {
+        console.warn("Transkriptions-Fehler:", e);
+      }
+      resolve();
+    };
+    rec.stop();
+  });
+  pendingTranscriptions.push(donePromise);
+}
+
 async function beginRecording(duration) {
   document.getElementById("card-start").classList.add("hidden");
   document.getElementById("card-recording").classList.remove("hidden");
-  chunks = [];
-  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-  mediaRecorder = new MediaRecorder(stream);
-  mediaRecorder.ondataavailable = e => chunks.push(e.data);
-  mediaRecorder.start();
+  document.getElementById("btn-hold").classList.remove("hidden");
+  fragments = [];
+  pendingTranscriptions = [];
+  micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  sessionStartMs = Date.now();
   let remaining = duration;
   document.getElementById("timer").textContent = fmtTime(remaining);
   const interval = setInterval(() => {
@@ -250,39 +313,35 @@ async function beginRecording(duration) {
     document.getElementById("timer").textContent = fmtTime(Math.max(0,remaining));
     if (remaining <= 0) {
       clearInterval(interval);
-      stopAndTranscribe(stream);
+      finishRecording();
     }
   }, 1000);
 }
 
-async function stopAndTranscribe(stream) {
-  document.getElementById("status-recording").textContent = "Stoppe Aufnahme...";
-  const blob = await new Promise(resolve => {
-    mediaRecorder.onstop = () => resolve(new Blob(chunks, { type: "audio/webm" }));
-    mediaRecorder.stop();
-  });
-  stream.getTracks().forEach(t => t.stop());
+async function finishRecording() {
+  stopPress(); // falls beim Timer-Ende noch gedrueckt
+  document.getElementById("btn-hold").classList.add("hidden");
+  document.getElementById("status-recording").textContent = "Verarbeite letzte Aufnahmen...";
+  await Promise.all(pendingTranscriptions);
+  micStream.getTracks().forEach(t => t.stop());
   document.getElementById("card-recording").classList.add("hidden");
   document.getElementById("card-own-transcript").classList.remove("hidden");
-  document.getElementById("status-own").textContent = "Transkribiere mit Whisper...";
+  fragments.sort((a,b) => a.start - b.start);
+  document.getElementById("own-transcript").textContent = fragments.map(f => `[${fmtTime(Math.round(f.start))}] ${f.text}`).join("\n");
+  document.getElementById("status-own").textContent = "Sende an Sitzung...";
   try {
-    const result = await transcribeVerbose(blob);
-    document.getElementById("own-transcript").textContent = result.text;
-    document.getElementById("status-own").textContent = "Sende an Sitzung...";
-    await apiPost(`/api/session/${CODE}/transcript/${MY_CHANNEL}`, { text: result.text, segments: result.segments });
+    await apiPost(`/api/session/${CODE}/transcript/${MY_CHANNEL}`, { fragments });
     document.getElementById("status-own").textContent = "Fertig. Bitte beim Lehrer-Laptop weiterschauen.";
   } catch (e) {
     document.getElementById("status-own").textContent = "Fehler: " + e.message;
   }
 }
 
-async function transcribeVerbose(blob) {
+async function transcribePlain(blob) {
   const fd = new FormData();
   fd.append("file", blob, "audio.webm");
   fd.append("model", "whisper-large-v3");
   fd.append("language", "de");
-  fd.append("response_format", "verbose_json");
-  fd.append("timestamp_granularities[]", "segment");
   const resp = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", {
     method: "POST",
     headers: { "Authorization": "Bearer " + groqKey },
@@ -290,9 +349,14 @@ async function transcribeVerbose(blob) {
   });
   if (!resp.ok) throw new Error("Whisper-Fehler: " + await resp.text());
   const json = await resp.json();
-  const segments = (json.segments || []).map(s => ({ start: s.start, end: s.end, text: s.text.trim() }));
-  return { text: (json.text || "").trim(), segments };
+  return (json.text || "").trim();
 }
+
+document.getElementById("btn-hold").addEventListener("pointerdown", e => { e.preventDefault(); startPress(); });
+document.getElementById("btn-hold").addEventListener("pointerup", stopPress);
+document.getElementById("btn-hold").addEventListener("pointercancel", stopPress);
+document.getElementById("btn-hold").addEventListener("pointerleave", stopPress);
+document.getElementById("btn-hold").addEventListener("contextmenu", e => e.preventDefault());
 
 async function chat(messages, jsonMode) {
   const body = { model: "llama-3.3-70b-versatile", messages };
@@ -321,10 +385,10 @@ async function waitForBothAndEvaluate() {
 }
 
 function mergeTranscripts(s) {
-  const a = (s.transcripts.a.segments || []).map(seg => ({ ...seg, speaker: "Schueler A" }));
-  const b = (s.transcripts.b.segments || []).map(seg => ({ ...seg, speaker: "Schueler B" }));
+  const a = (s.transcripts.a.fragments || []).map(f => ({ ...f, speaker: "Schueler A" }));
+  const b = (s.transcripts.b.fragments || []).map(f => ({ ...f, speaker: "Schueler B" }));
   const merged = a.concat(b).sort((x,y) => x.start - y.start);
-  return merged.map(seg => `[${fmtTime(Math.round(seg.start))}] ${seg.speaker}: ${seg.text}`).join("\n");
+  return merged.map(f => `[${fmtTime(Math.round(f.start))}] ${f.speaker}: ${f.text}`).join("\n");
 }
 
 const TEIL2_PROMPT = `
