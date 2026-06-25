@@ -346,6 +346,24 @@ function relSeconds() {
   return (Date.now() - sessionStartMs) / 1000;
 }
 
+// 3 lange Signaltoene als sanfter Hinweis (kein Stopp, keine Pflicht) - z.B. zur Halbzeit,
+// damit Schueler B eine Orientierung bekommt, wann ungefaehr Thema 2 dran waere.
+function playBeeps(times) {
+  const ctx = new (window.AudioContext || window.webkitAudioContext)();
+  let t = ctx.currentTime;
+  for (let i = 0; i < times; i++) {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.frequency.value = 880;
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    gain.gain.setValueAtTime(0.15, t);
+    osc.start(t);
+    osc.stop(t + 0.5);
+    t += 0.65;
+  }
+}
+
 function startPress() {
   if (pressRecorder || !micStream) return;
   pressChunks = [];
@@ -402,10 +420,18 @@ async function beginRecording(duration) {
   micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
   sessionStartMs = Date.now();
   let remaining = duration;
+  let halfwaySignaled = false;
   document.getElementById("timer").textContent = fmtTime(remaining);
   const interval = setInterval(() => {
     remaining--;
     document.getElementById("timer").textContent = fmtTime(Math.max(0,remaining));
+    if (!halfwaySignaled && remaining <= Math.floor(duration / 2)) {
+      halfwaySignaled = true;
+      try { playBeeps(3); } catch (e) { /* Audio evtl. nicht erlaubt - kein Abbruch */ }
+      if (MY_CHANNEL === "b") {
+        document.getElementById("status-recording").textContent = "Jetzt waere ein guter Moment fuer Thema 2.";
+      }
+    }
     if (remaining <= 0) {
       clearInterval(interval);
       finishRecording();
