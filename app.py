@@ -69,6 +69,91 @@ def phone_page(code):
     return render_template("index.html", role="phone", preset_code=code)
 
 
+@app.route("/teil1")
+def teil1_page():
+    return render_template("teil1.html")
+
+
+@app.route("/api/teil1/docx", methods=["POST"])
+def api_teil1_docx():
+    body = request.get_json(force=True)
+    name = (body.get("name") or "").strip() or "Lernende-r"
+    thema = body.get("thema", "")
+    transkript_1a = body.get("transkript_1a", "")
+    fragen_1b = body.get("fragen_1b", [])
+    transkript_1b = body.get("transkript_1b", "")
+    transkript_1c = body.get("transkript_1c", "")
+    ev = body.get("eval", {})
+
+    doc = Document()
+    doc.add_heading("DTB B2 — Sprechen Teil 1 — Ergebnis", level=1)
+    doc.add_paragraph(f"Name: {name}")
+    doc.add_paragraph(f"Thema: {thema}")
+
+    doc.add_heading("1A — Monolog", level=2)
+    doc.add_paragraph(transkript_1a)
+
+    doc.add_heading("1B — Prüferfragen", level=2)
+    for i, f in enumerate(fragen_1b, 1):
+        doc.add_paragraph(f"{i}. {f}")
+    doc.add_heading("1B — Antwort", level=3)
+    doc.add_paragraph(transkript_1b)
+
+    doc.add_heading("1C — Erläuterung in eigenen Worten", level=2)
+    doc.add_paragraph(transkript_1c)
+
+    doc.add_heading(f"Bewertung — {name}", level=2)
+
+    for krit, label in (
+        ("ki_1a", "K-I Teil 1A — Monolog"),
+        ("ki_1b", "K-I Teil 1B — Prüferfragen"),
+        ("ki_1c", "K-I Teil 1C — Erläuterung"),
+        ("kii",   "K-II Aussprache/Intonation"),
+        ("kiii",  "K-III Formale Richtigkeit"),
+        ("kiv",   "K-IV Spektrum sprachlicher Mittel"),
+    ):
+        k = ev.get(krit, {})
+        stufe = k.get("stufe", "-")
+        punkte = k.get("punkte", "-")
+        bestanden_krit = stufe in ("A", "B")
+        icon = "✅" if bestanden_krit else "❌"
+        p = doc.add_paragraph()
+        r = p.add_run(f"{icon} {label}: Stufe {stufe} ({punkte} P.)")
+        r.bold = True
+        r.font.color.rgb = GRUEN if bestanden_krit else ROT
+        doc.add_paragraph(k.get("kommentar", ""))
+
+    gesamt = ev.get("gesamt_p", "-")
+    max_p = ev.get("max_p", 24)
+    p = doc.add_paragraph()
+    p.add_run(f"Gesamt: {gesamt} / {max_p} Punkte").bold = True
+
+    if ev.get("staerken"):
+        doc.add_heading("Stärken", level=3)
+        for st in ev["staerken"]:
+            par = doc.add_paragraph(style="List Bullet")
+            par.add_run(st).font.color.rgb = GRUEN
+
+    if ev.get("verbesserungen"):
+        doc.add_heading("Verbesserungsvorschläge", level=3)
+        for v in ev["verbesserungen"]:
+            par = doc.add_paragraph(style="List Bullet")
+            par.add_run(v).font.color.rgb = ROT
+
+    doc.add_heading("Feedback", level=3)
+    doc.add_paragraph(ev.get("feedback", ""))
+
+    buf = io.BytesIO()
+    doc.save(buf)
+    buf.seek(0)
+    return send_file(
+        buf,
+        as_attachment=True,
+        download_name=f"DTB_B2_Teil1_{name}.docx",
+        mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    )
+
+
 @app.route("/api/create", methods=["POST"])
 def api_create():
     _cleanup()

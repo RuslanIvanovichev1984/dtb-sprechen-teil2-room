@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DTB B2 — Sprechen Teil 1</title>
+<style>
+body { font-family: 'Segoe UI', sans-serif; max-width: 760px; margin: 30px auto; padding: 0 16px; background:#f0f4f8; color:#222; }
+h1 { color:#1F3864; font-size:20px; }
+h2 { color:#1F3864; font-size:16px; margin-top:28px; }
+.card { background:#fff; border-radius:8px; padding:18px 22px; margin-bottom:18px; box-shadow:0 2px 6px rgba(0,0,0,.08); }
+label { font-weight:600; font-size:13px; display:block; margin-bottom:4px; }
+input[type=text], select, textarea { width:100%; padding:8px; border:1px solid #ccc; border-radius:5px; font-size:14px; margin-bottom:10px; box-sizing:border-box; }
+button { background:#1F3864; color:#fff; border:none; padding:10px 16px; border-radius:6px; font-size:14px; cursor:pointer; margin-right:8px; }
+button:disabled { background:#aaa; cursor:default; }
+button.stop { background:#c62828; }
+.status { font-size:13px; color:#777; margin-top:6px; }
+.code { font-size:32px; font-weight:700; letter-spacing:4px; color:#1F3864; text-align:center; margin:10px 0; }
+.frage { background:#e3f2fd; border:1px solid #90caf9; border-radius:6px; padding:10px 14px; font-size:14px; margin:8px 0; }
+.timer { font-weight:700; color:#c62828; font-size:18px; }
+.transcript { background:#fffde7; border:1px solid #f9a825; border-radius:6px; padding:10px 14px; font-size:13px; white-space:pre-wrap; margin-top:8px; }
+.eval { white-space:pre-wrap; font-size:14px; line-height:1.5; }
+.hidden { display:none; }
+</style>
+</head>
+<body>
+
+<h1>DTB B2 — Sprechen Teil 1</h1>
+
+<div class="card">
+  <label for="groqKey">Groq API-Key (gsk_...)</label>
+  <input type="text" id="groqKey" placeholder="gsk_...">
+  <div class="status">Wird nur lokal auf diesem Gerät gespeichert, nicht hochgeladen.</div>
+</div>
+
+<div class="card">
+  <label for="studentName">Name des Lernenden</label>
+  <input type="text" id="studentName" placeholder="Vorname Nachname">
+</div>
+
+<!-- 1A -->
+<div class="card" id="card-1a">
+  <h2>Teil 1A — Monolog (~2 Min)</h2>
+  <label for="thema">Thema wählen</label>
+  <select id="thema">
+    <option>Arbeitgeber</option>
+    <option>Arbeitsumfeld</option>
+    <option>Berufswahl</option>
+    <option>Berufliches Vorbild</option>
+    <option>Arbeitssuche</option>
+    <option>Bewerbungsgespräch</option>
+    <option>Produkt/Dienstleistung</option>
+    <option>Geschäftsidee</option>
+  </select>
+  <button id="btn-rec-1a">Aufnahme starten</button>
+  <button id="btn-stop-1a" class="stop hidden">Aufnahme stoppen</button>
+  <span class="timer hidden" id="timer-1a">00:00</span>
+  <div class="status" id="status-1a"></div>
+  <div class="transcript hidden" id="transcript-1a"></div>
+</div>
+
+<!-- 1B -->
+<div class="card hidden" id="card-1b">
+  <h2>Teil 1B — Prüferfragen (~2 Min)</h2>
+  <div id="fragen-1b"></div>
+  <button id="btn-rec-1b">Antwort aufnehmen</button>
+  <button id="btn-stop-1b" class="stop hidden">Aufnahme stoppen</button>
+  <span class="timer hidden" id="timer-1b">00:00</span>
+  <div class="status" id="status-1b"></div>
+  <div class="transcript hidden" id="transcript-1b"></div>
+</div>
+
+<!-- 1C -->
+<div class="card hidden" id="card-1c">
+  <h2>Teil 1C — Eigene Aussage in eigenen Worten erläutern (~30 Sek)</h2>
+  <p style="font-size:13px;color:#555;">In der echten Prüfung macht das TN B über TN A's Aussage. Für die Solo-Übung: erkläre kurz, was du in 1A im Grunde gesagt hast — in eigenen Worten, nicht wortgleich wiederholt.</p>
+  <button id="btn-rec-1c">Aufnahme starten</button>
+  <button id="btn-stop-1c" class="stop hidden">Aufnahme stoppen</button>
+  <span class="timer hidden" id="timer-1c">00:00</span>
+  <div class="status" id="status-1c"></div>
+  <div class="transcript hidden" id="transcript-1c"></div>
+</div>
+
+<!-- Bewertung -->
+<div class="card hidden" id="card-eval">
+  <h2>Bewertung</h2>
+  <button id="btn-eval">Jetzt bewerten</button>
+  <div class="status" id="status-eval"></div>
+  <div class="eval" id="eval-result"></div>
+</div>
+
+<!-- Word-Export -->
+<div class="card hidden" id="card-download">
+  <h2>Ergebnis herunterladen</h2>
+  <button id="btn-download">Word-Datei herunterladen</button>
+  <div class="status" id="status-download"></div>
+</div>
+
+<script>
+const KRITERIEN_PROMPT = `
+Du bist ein lizenzierter Prüfer/Assessor für die Prüfung "Deutsch-Test für den Beruf B2" (DTB B2, BAMF/telc).
+Du bewertest Sprechen Teil 1 (1A Monolog, 1B Prüferfragen, 1C Erläuterung in eigenen Worten) streng nach den offiziellen Kriterien.
+
+KRITERIUM I — Kommunikative Aufgabenbewältigung (PRO Teilaufgabe einzeln, A/B/C/D):
+- Teil 1A (max 5 P): A=5, B=3.5, C=2, D=0
+- Teil 1B (max 5 P): A=5, B=3.5, C=2, D=0
+- Teil 1C (max 2 P): A=2, B=1.5, C=1, D=0
+Beschreibung A (voll adäquat): Setzt die Aufgabe voll adäquat um, spricht die Adressaten angemessen und mit passendem Formalitätsgrad an, Äußerungen sind flüssig.
+B (überwiegend adäquat): überwiegend adäquat, meistens angemessen, weitgehend flüssig.
+C (teilweise adäquat): nur teilweise adäquat, drückt sich nicht mühelos spontan aus, Stockungen kommen mehrfach vor.
+D (nicht adäquat): nicht adäquat, stockt häufig und muss neu ansetzen.
+
+KRITERIEN II-IV — Sprachliche Angemessenheit (GESAMT über 1A+1B+1C, je max 10 P, A/B/C/D = 10/7.5/4/0):
+II Aussprache/Intonation:
+ A: weitestgehend klar, natürlich, kaum akzentgefärbt, Intonation weitestgehend korrekt.
+ B: weitgehend klar, natürlich, wenig akzentgefärbt, Intonation weitgehend korrekt.
+ C: weitestgehend verständlich, aber deutlich akzentgefärbt, Intonation unterstützt im Allgemeinen.
+ D: grundsätzlich verständlich, aber so stark akzentgefärbt, dass Rückfragen nötig sind.
+ (Hinweis: du bewertest hier NUR den Transkript-Text und ggf. Auffälligkeiten in der Transkription wie Wiederholungen/Korrekturen — echte Aussprache kannst du aus reinem Text nicht prüfen. Markiere das im Feedback als Einschränkung.)
+III Formale Richtigkeit:
+ A: einfache + meiste komplexere Strukturen weitgehend korrekt, manchmal Fehler in komplexen Strukturen, korrigiert eigene Fehler oft selbst.
+ B: einfache + einige komplexere Strukturen weitgehend korrekt, Fehler in komplexen Strukturen, korrigiert einige Fehler selbst.
+ C: Repertoire häufig verwendeter Formen ausreichend korrekt, Fehler kommen vor, bleibt weitestgehend klar, setzt bei Problemen neu an.
+ D: einige einfache Strukturen korrekt, aber systematisch elementare Fehler.
+IV Spektrum sprachlicher Mittel:
+ A: breites Spektrum, variiert Formulierungen häufig, einige komplexe Satzstrukturen.
+ B: hinreichend breites Spektrum, variiert oft, einige komplexe Satzstrukturen.
+ C: genügend sprachliche Mittel, überwiegend einfache Satzstrukturen.
+ D: kurze gebräuchliche Ausdrücke, einfache Satzmuster.
+
+WICHTIGE PRÜFUNGSREGELN:
+- Teil 1 wird in der Sie-Form gesprochen.
+- Auswendiglernen wird bestraft (wirkt unnatürlich).
+- 1C ist Mediation: TN soll paraphrasieren ("Im Grunde meinte er/sie, dass..."), NICHT wortwörtlich wiederholen.
+
+Schreibe ALLE Texte in korrektem Standarddeutsch mit echten Umlauten und Eszett (ä, ö, ü, ß) — NICHT als ae/oe/ue/ss.
+
+AUFGABE: Du bekommst die Transkripte von 1A, 1B (inkl. Prüferfragen) und 1C. Gib eine JSON-Antwort mit:
+{
+ "ki_1a": {"stufe":"A/B/C/D","punkte":n,"kommentar":"..."},
+ "ki_1b": {"stufe":"...","punkte":n,"kommentar":"..."},
+ "ki_1c": {"stufe":"...","punkte":n,"kommentar":"..."},
+ "kii": {"stufe":"...","punkte":n,"kommentar":"..."},
+ "kiii": {"stufe":"...","punkte":n,"kommentar":"..."},
+ "kiv": {"stufe":"...","punkte":n,"kommentar":"..."},
+ "gesamt_p": n,
+ "max_p": 24,
+ "staerken": ["...", "..."],
+ "verbesserungen": ["...", "..."],
+ "feedback": "kurzes zusammenfassendes Feedback auf Deutsch, motivierend aber ehrlich"
+}
+Antworte NUR mit dem JSON, ohne Markdown-Codeblock.
+`;
+
+let groqKey = localStorage.getItem("groqKey_teil1") || "";
+document.getElementById("groqKey").value = groqKey;
+document.getElementById("groqKey").addEventListener("change", e => {
+  groqKey = e.target.value.trim();
+  localStorage.setItem("groqKey_teil1", groqKey);
+});
+
+let mediaRecorder, chunks = [], timerInterval, timerSeconds = 0;
+let data = { thema: "", transkript_1a: "", fragen_1b: [], transkript_1b: "", transkript_1c: "" };
+let evalResult = null;
+
+function fmtTime(s) {
+  const m = Math.floor(s/60).toString().padStart(2,"0");
+  const sec = (s%60).toString().padStart(2,"0");
+  return `${m}:${sec}`;
+}
+
+async function startRecording(timerEl) {
+  chunks = [];
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  mediaRecorder = new MediaRecorder(stream);
+  mediaRecorder.ondataavailable = e => chunks.push(e.data);
+  mediaRecorder.start();
+  timerSeconds = 0;
+  if (timerEl) {
+    timerEl.classList.remove("hidden");
+    timerEl.textContent = "00:00";
+    timerInterval = setInterval(() => {
+      timerSeconds++;
+      timerEl.textContent = fmtTime(timerSeconds);
+    }, 1000);
+  }
+}
+
+function stopRecording(timerEl) {
+  return new Promise(resolve => {
+    mediaRecorder.onstop = () => {
+      clearInterval(timerInterval);
+      if (timerEl) timerEl.classList.add("hidden");
+      mediaRecorder.stream.getTracks().forEach(t => t.stop());
+      resolve(new Blob(chunks, { type: "audio/webm" }));
+    };
+    mediaRecorder.stop();
+  });
+}
+
+async function transcribe(blob) {
+  const fd = new FormData();
+  fd.append("file", blob, "audio.webm");
+  fd.append("model", "whisper-large-v3");
+  fd.append("language", "de");
+  const resp = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", {
+    method: "POST",
+    headers: { "Authorization": "Bearer " + groqKey },
+    body: fd
+  });
+  if (!resp.ok) throw new Error("Whisper-Fehler: " + await resp.text());
+  const json = await resp.json();
+  return json.text.trim();
+}
+
+async function chat(messages, jsonMode) {
+  const body = { model: "llama-3.3-70b-versatile", messages };
+  if (jsonMode) body.response_format = { type: "json_object" };
+  const resp = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    method: "POST",
+    headers: { "Authorization": "Bearer " + groqKey, "Content-Type": "application/json" },
+    body: JSON.stringify(body)
+  });
+  if (!resp.ok) throw new Error("LLM-Fehler: " + await resp.text());
+  const json = await resp.json();
+  return json.choices[0].message.content;
+}
+
+// 1A
+document.getElementById("btn-rec-1a").addEventListener("click", async () => {
+  data.thema = document.getElementById("thema").value;
+  document.getElementById("status-1a").textContent = "Aufnahme läuft...";
+  document.getElementById("btn-rec-1a").classList.add("hidden");
+  document.getElementById("btn-stop-1a").classList.remove("hidden");
+  await startRecording(document.getElementById("timer-1a"));
+});
+
+document.getElementById("btn-stop-1a").addEventListener("click", async () => {
+  document.getElementById("btn-stop-1a").classList.add("hidden");
+  document.getElementById("status-1a").textContent = "Transkribiere...";
+  const blob = await stopRecording(document.getElementById("timer-1a"));
+  try {
+    data.transkript_1a = await transcribe(blob);
+    document.getElementById("transcript-1a").textContent = data.transkript_1a;
+    document.getElementById("transcript-1a").classList.remove("hidden");
+    document.getElementById("status-1a").textContent = "Generiere Prüferfragen...";
+    const raw = await chat([
+      { role: "system", content: "Du bist Prüfer/in bei DTB B2 Sprechen Teil 1B. Stelle GENAU 2 kurze, natürliche vertiefende Rückfragen (Sie-Form) zu dem, was der Kandidat in 1A gesagt hat. Gib NUR ein JSON-Array mit genau 2 Strings zurück, z.B. [\"Frage 1?\",\"Frage 2?\"]." },
+      { role: "user", content: `Thema: ${data.thema}\nAussage des Kandidaten (1A):\n${data.transkript_1a}` }
+    ], false);
+    let fragen;
+    try { fragen = JSON.parse(raw.replace(/```json|```/g,"").trim()); } catch(e) { fragen = [raw]; }
+    data.fragen_1b = fragen;
+    document.getElementById("fragen-1b").innerHTML = fragen.map(f => `<div class="frage">${f}</div>`).join("");
+    document.getElementById("status-1a").textContent = "Fertig.";
+    document.getElementById("card-1b").classList.remove("hidden");
+  } catch(e) {
+    document.getElementById("status-1a").textContent = "Fehler: " + e.message;
+  }
+});
+
+// 1B
+document.getElementById("btn-rec-1b").addEventListener("click", async () => {
+  document.getElementById("status-1b").textContent = "Aufnahme läuft...";
+  document.getElementById("btn-rec-1b").classList.add("hidden");
+  document.getElementById("btn-stop-1b").classList.remove("hidden");
+  await startRecording(document.getElementById("timer-1b"));
+});
+
+document.getElementById("btn-stop-1b").addEventListener("click", async () => {
+  document.getElementById("btn-stop-1b").classList.add("hidden");
+  document.getElementById("status-1b").textContent = "Transkribiere...";
+  const blob = await stopRecording(document.getElementById("timer-1b"));
+  try {
+    data.transkript_1b = await transcribe(blob);
+    document.getElementById("transcript-1b").textContent = data.transkript_1b;
+    document.getElementById("transcript-1b").classList.remove("hidden");
+    document.getElementById("status-1b").textContent = "Fertig.";
+    document.getElementById("card-1c").classList.remove("hidden");
+  } catch(e) {
+    document.getElementById("status-1b").textContent = "Fehler: " + e.message;
+  }
+});
+
+// 1C
+document.getElementById("btn-rec-1c").addEventListener("click", async () => {
+  document.getElementById("status-1c").textContent = "Aufnahme läuft...";
+  document.getElementById("btn-rec-1c").classList.add("hidden");
+  document.getElementById("btn-stop-1c").classList.remove("hidden");
+  await startRecording(document.getElementById("timer-1c"));
+});
+
+document.getElementById("btn-stop-1c").addEventListener("click", async () => {
+  document.getElementById("btn-stop-1c").classList.add("hidden");
+  document.getElementById("status-1c").textContent = "Transkribiere...";
+  const blob = await stopRecording(document.getElementById("timer-1c"));
+  try {
+    data.transkript_1c = await transcribe(blob);
+    document.getElementById("transcript-1c").textContent = data.transkript_1c;
+    document.getElementById("transcript-1c").classList.remove("hidden");
+    document.getElementById("status-1c").textContent = "Fertig.";
+    document.getElementById("card-eval").classList.remove("hidden");
+  } catch(e) {
+    document.getElementById("status-1c").textContent = "Fehler: " + e.message;
+  }
+});
+
+// Bewertung
+document.getElementById("btn-eval").addEventListener("click", async () => {
+  document.getElementById("btn-eval").disabled = true;
+  document.getElementById("status-eval").textContent = "Bewerte...";
+  try {
+    const userContent = `Thema: ${data.thema}\n\n1A Transkript:\n${data.transkript_1a}\n\n1B Prüferfragen:\n${data.fragen_1b.join("\n")}\n\n1B Antwort-Transkript:\n${data.transkript_1b}\n\n1C Transkript:\n${data.transkript_1c}`;
+    const raw = await chat([
+      { role: "system", content: KRITERIEN_PROMPT },
+      { role: "user", content: userContent }
+    ], true);
+    evalResult = JSON.parse(raw);
+    document.getElementById("eval-result").textContent = JSON.stringify(evalResult, null, 2);
+    document.getElementById("status-eval").textContent = "Fertig.";
+    document.getElementById("card-download").classList.remove("hidden");
+  } catch(e) {
+    document.getElementById("btn-eval").disabled = false;
+    document.getElementById("status-eval").textContent = "Fehler: " + e.message;
+  }
+});
+
+// Word-Export
+document.getElementById("btn-download").addEventListener("click", async () => {
+  document.getElementById("btn-download").disabled = true;
+  document.getElementById("status-download").textContent = "Erstelle Word-Datei...";
+  const name = document.getElementById("studentName").value.trim() || "Lernende-r";
+  try {
+    const payload = {
+      name,
+      thema: data.thema,
+      transkript_1a: data.transkript_1a,
+      fragen_1b: data.fragen_1b,
+      transkript_1b: data.transkript_1b,
+      transkript_1c: data.transkript_1c,
+      eval: evalResult
+    };
+    const resp = await fetch("/api/teil1/docx", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    if (!resp.ok) throw new Error("Server-Fehler: " + await resp.text());
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `DTB_B2_Teil1_${name}.docx`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    document.getElementById("status-download").textContent = "Fertig.";
+    document.getElementById("btn-download").disabled = false;
+  } catch(e) {
+    document.getElementById("btn-download").disabled = false;
+    document.getElementById("status-download").textContent = "Fehler: " + e.message;
+  }
+});
+</script>
+</body>
+</html>
