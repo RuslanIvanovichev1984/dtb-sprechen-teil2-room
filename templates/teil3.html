@@ -23,6 +23,26 @@ button:disabled { background:#aaa; cursor:default; }
 .hidden { display:none; }
 .badge { display:inline-block; background:#1F3864; color:#fff; border-radius:5px; padding:4px 10px; font-size:13px; font-weight:600; }
 .hold-btn { display:block; width:100%; padding:28px; font-size:18px; font-weight:700; border-radius:10px; background:#2e7d32; touch-action:none; -webkit-user-select:none; user-select:none; margin-top:14px; }
+.eval-card { background:#f9f9f9; border-radius:8px; padding:16px 18px; margin-bottom:14px; }
+.eval-name { font-size:16px; font-weight:700; color:#1F3864; margin-bottom:8px; }
+.eval-bestanden { font-weight:700; font-size:14px; margin-bottom:10px; }
+.eval-krit { display:flex; justify-content:space-between; align-items:center; padding:6px 0; border-bottom:1px solid #eee; font-size:13px; }
+.eval-stufe { font-weight:700; padding:2px 8px; border-radius:4px; font-size:12px; }
+.stufe-ok { background:#e8f5e9; color:#2e7d32; }
+.stufe-fail { background:#ffebee; color:#c62828; }
+.eval-kommentar { font-size:12px; color:#666; margin:2px 0 6px 20px; }
+.eval-section { margin-top:10px; }
+.eval-section h4 { font-size:13px; font-weight:700; margin:0 0 4px 0; }
+.eval-bullet { font-size:13px; padding:2px 0 2px 14px; position:relative; }
+.eval-bullet::before { content:"•"; position:absolute; left:2px; }
+.eval-bullet.ok { color:#2e7d32; }
+.eval-bullet.fail { color:#c62828; }
+.eval-feedback { font-size:13px; color:#444; line-height:1.6; background:#fff; padding:10px; border-radius:6px; margin-top:4px; }
+.musterdialog-box { background:#f9f9f9; border-radius:8px; padding:16px 18px; margin-top:4px; }
+.musterdialog-box h3 { color:#1F3864; font-size:15px; margin:0 0 10px 0; }
+.dialog-turn { padding:5px 0; font-size:13px; border-bottom:1px solid #eee; }
+.dialog-turn:last-child { border-bottom:none; }
+.dialog-speaker { font-weight:700; color:#1F3864; }
 .hold-btn.active { background:#c62828; }
 nav { display:flex; gap:4px; margin-bottom:20px; background:#fff; border-radius:8px; padding:6px; box-shadow:0 2px 6px rgba(0,0,0,.08); }
 nav a { flex:1; text-align:center; padding:10px; border-radius:6px; font-size:13px; font-weight:600; color:#1F3864; text-decoration:none; }
@@ -311,7 +331,7 @@ async function handleDone(s) {
       window._evalShown = true;
       document.getElementById("merged-transcript").textContent = mergeTranscripts(s);
       document.getElementById("merged-transcript").classList.remove("hidden");
-      document.getElementById("eval-result").textContent = JSON.stringify(s.eval, null, 2);
+      document.getElementById("eval-result").innerHTML = renderEval(s.eval, s, "3");
       document.getElementById("status-result").textContent = "Fertig.";
       const dl = document.createElement("a");
       dl.href = `/api/session/${CODE}/docx`;
@@ -503,6 +523,59 @@ function mergeTranscripts(s) {
   const b = (s.transcripts.b.fragments || []).map(f => ({ ...f, speaker: `${bName} (B)` }));
   return a.concat(b).sort((x, y) => x.start - y.start)
     .map(f => `[${fmtTime(Math.round(f.start))}] ${f.speaker}: ${f.text}`).join("\n");
+}
+
+function renderEval(ev, s, teilNr) {
+  const aName = (s.names && s.names.a) || "TN A";
+  const bName = (s.names && s.names.b) || "TN B";
+  const KRITERIEN = [
+    ["ki",   "K-I Kommunikative Aufgabenbewältigung"],
+    ["kii",  "K-II Aussprache/Intonation"],
+    ["kiii", "K-III Formale Richtigkeit"],
+    ["kiv",  "K-IV Spektrum sprachlicher Mittel"],
+  ];
+  let html = "";
+  for (const [key, name] of [["schueler_a", aName], ["schueler_b", bName]]) {
+    const res = ev[key] || {};
+    const bestanden = res.bestanden_einschaetzung;
+    const color = bestanden ? "#2e7d32" : "#c62828";
+    html += `<div class="eval-card">`;
+    html += `<div class="eval-name">${name}</div>`;
+    html += `<div class="eval-bestanden" style="color:${color}">${bestanden ? "✅" : "❌"} ${bestanden ? "ausreichend" : "noch nicht ausreichend"} für Teil ${teilNr}</div>`;
+    for (const [krit, label] of KRITERIEN) {
+      const k = res[krit] || {};
+      const stufe = k.stufe || "-";
+      const ok = ["A","B"].includes(stufe);
+      html += `<div class="eval-krit"><span>${ok?"✅":"❌"} ${label}</span><span class="eval-stufe ${ok?"stufe-ok":"stufe-fail"}">Stufe ${stufe}</span></div>`;
+      if (k.kommentar) html += `<div class="eval-kommentar">${k.kommentar}</div>`;
+    }
+    if ("aufgabenverteilung" in res) {
+      const av = res.aufgabenverteilung;
+      html += `<div class="eval-krit"><span>${av?"✅":"❌"} Aufgabenverteilung</span><span class="eval-stufe ${av?"stufe-ok":"stufe-fail"}">${av?"vorhanden":"fehlt"}</span></div>`;
+    }
+    if (res.staerken && res.staerken.length) {
+      html += `<div class="eval-section"><h4 style="color:#2e7d32">Stärken</h4>`;
+      res.staerken.forEach(st => { html += `<div class="eval-bullet ok">${st}</div>`; });
+      html += `</div>`;
+    }
+    if (res.verbesserungen && res.verbesserungen.length) {
+      html += `<div class="eval-section"><h4 style="color:#c62828">Verbesserungsvorschläge</h4>`;
+      res.verbesserungen.forEach(v => { html += `<div class="eval-bullet fail">${v}</div>`; });
+      html += `</div>`;
+    }
+    if (res.feedback) {
+      html += `<div class="eval-section"><h4>Feedback</h4><div class="eval-feedback">${res.feedback}</div></div>`;
+    }
+    html += `</div>`;
+  }
+  if (ev.musterdialog && ev.musterdialog.length) {
+    html += `<div class="musterdialog-box"><h3>Ideales Muster-Gespräch (B2-Niveau)</h3>`;
+    ev.musterdialog.forEach(turn => {
+      html += `<div class="dialog-turn"><span class="dialog-speaker">${turn.speaker}:</span> ${turn.text}</div>`;
+    });
+    html += `</div>`;
+  }
+  return html;
 }
 
 async function runEvaluation(s) {
