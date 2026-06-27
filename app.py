@@ -227,6 +227,21 @@ def api_docx(code):
         doc.add_heading("Feedback", level=3)
         doc.add_paragraph(res.get("feedback", ""))
 
+    musterdialog = ev.get("musterdialog")
+    if musterdialog:
+        doc.add_heading("Ideales Muster-Gespräch (B2-Niveau)", level=2)
+        doc.add_paragraph(
+            "Die folgende korrigierte Version zeigt, wie das Gespräch auf "
+            "prüfungsausreichendem B2-Niveau hätte klingen können. "
+            "Themen und Ideen der Lernenden wurden beibehalten, nur die "
+            "sprachlichen Konstruktionen wurden verbessert."
+        )
+        for turn in musterdialog:
+            p = doc.add_paragraph()
+            r = p.add_run(f"{turn.get('speaker', '')}: ")
+            r.bold = True
+            p.add_run(turn.get("text", ""))
+
     buf = io.BytesIO()
     doc.save(buf)
     buf.seek(0)

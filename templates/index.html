@@ -514,7 +514,9 @@ Bewerte JEDE Person EINZELN nach folgenden Kriterien (A/B/C/D, gleiche Logik wie
 
 Wichtige Regeln: Sie-Form statt Du-Form ist ein klarer Mangel bei K-I. Reine Ja/Nein-Antworten ohne Begruendung/Rueckfrage sind ein Mangel bei K-I.
 
-Schreibe ALLE Texte (kommentar, feedback, staerken, verbesserungen) in korrektem Standarddeutsch mit echten Umlauten und Eszett (ä, ö, ü, ß) - NICHT als ae/oe/ue/ss.
+Erstelle zusaetzlich ein "musterdialog"-Feld: eine korrigierte Version des Gespraeches, die zeigt, wie der Dialog auf pruefungsausreichendem B2-Niveau ausgesehen haette. Behalte dabei die tatsaechlichen Themen und Ideen der Lernenden bei - verbessere nur die sprachlichen Konstruktionen (Grammatik, Wortschatz, Satzbau, Du-Form durchgehend). Das Ergebnis soll natuerlich klingen, nicht akademisch. Verwende die tatsaechlichen Vornamen der Lernenden (ohne "(A)"/"(B)").
+
+Schreibe ALLE Texte (kommentar, feedback, staerken, verbesserungen, musterdialog) in korrektem Standarddeutsch mit echten Umlauten und Eszett (ä, ö, ü, ß) - NICHT als ae/oe/ue/ss.
 
 Gib NUR folgendes JSON zurueck (kein Markdown), schueler_a = Person (A), schueler_b = Person (B):
 {
@@ -525,7 +527,11 @@ Gib NUR folgendes JSON zurueck (kein Markdown), schueler_a = Person (A), schuele
     "verbesserungen": ["...", "..."],
     "feedback": "ausfuehrliches, konkretes Feedback auf Deutsch: was ist gut gelungen, was fehlt noch, und ob das gezeigte Niveau fuer Teil 2 der DTB-B2-Pruefung ausreicht"
   },
-  "schueler_b": { ... gleiche Struktur ... }
+  "schueler_b": { ... gleiche Struktur ... },
+  "musterdialog": [
+    {"speaker": "Vorname", "text": "korrigierter/idealer Dialogzug"},
+    ...
+  ]
 }
 `;
 
