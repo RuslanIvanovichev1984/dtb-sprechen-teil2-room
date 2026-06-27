@@ -175,7 +175,8 @@ document.getElementById("groqKey").addEventListener("change", e => {
   localStorage.setItem("groqKey_teil1", groqKey);
 });
 
-let mediaRecorder, chunks = [], timerInterval, timerSeconds = 0;
+let mediaRecorder, chunks = [], timerInterval;
+let isRecordingActive = false;
 let data = { thema: "", transkript_1a: "", fragen_1b: [], transkript_1b: "", transkript_1c: "" };
 let evalResult = null;
 
@@ -185,27 +186,55 @@ function fmtTime(s) {
   return `${m}:${sec}`;
 }
 
-async function startRecording(timerEl) {
+function playBeeps(times) {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    let t = ctx.currentTime;
+    for (let i = 0; i < times; i++) {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.frequency.value = 880;
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      gain.gain.setValueAtTime(0.15, t);
+      osc.start(t);
+      osc.stop(t + 0.5);
+      t += 0.65;
+    }
+  } catch(e) {}
+}
+
+async function startRecording(timerEl, totalSeconds, onAutoStop) {
   chunks = [];
   const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
   mediaRecorder = new MediaRecorder(stream);
   mediaRecorder.ondataavailable = e => chunks.push(e.data);
   mediaRecorder.start();
-  timerSeconds = 0;
+  isRecordingActive = true;
+  let remaining = totalSeconds;
   if (timerEl) {
     timerEl.classList.remove("hidden");
-    timerEl.textContent = "00:00";
-    timerInterval = setInterval(() => {
-      timerSeconds++;
-      timerEl.textContent = fmtTime(timerSeconds);
-    }, 1000);
+    timerEl.textContent = fmtTime(remaining);
   }
+  timerInterval = setInterval(() => {
+    remaining--;
+    if (timerEl) timerEl.textContent = fmtTime(Math.max(0, remaining));
+    if (remaining === 10) playBeeps(3);
+    if (remaining <= 0) {
+      clearInterval(timerInterval);
+      if (isRecordingActive) {
+        isRecordingActive = false;
+        onAutoStop();
+      }
+    }
+  }, 1000);
 }
 
 function stopRecording(timerEl) {
+  isRecordingActive = false;
+  clearInterval(timerInterval);
   return new Promise(resolve => {
     mediaRecorder.onstop = () => {
-      clearInterval(timerInterval);
       if (timerEl) timerEl.classList.add("hidden");
       mediaRecorder.stream.getTracks().forEach(t => t.stop());
       resolve(new Blob(chunks, { type: "audio/webm" }));
@@ -245,13 +274,16 @@ async function chat(messages, jsonMode) {
 // 1A
 document.getElementById("btn-rec-1a").addEventListener("click", async () => {
   data.thema = document.getElementById("thema").value;
-  document.getElementById("status-1a").textContent = "Aufnahme läuft...";
+  document.getElementById("status-1a").textContent = "Aufnahme läuft... (2:10)";
   document.getElementById("btn-rec-1a").classList.add("hidden");
   document.getElementById("btn-stop-1a").classList.remove("hidden");
-  await startRecording(document.getElementById("timer-1a"));
+  await startRecording(document.getElementById("timer-1a"), 130, stop1A);
 });
-
-document.getElementById("btn-stop-1a").addEventListener("click", async () => {
+document.getElementById("btn-stop-1a").addEventListener("click", () => {
+  if (!isRecordingActive) return;
+  stop1A();
+});
+async function stop1A() {
   document.getElementById("btn-stop-1a").classList.add("hidden");
   document.getElementById("status-1a").textContent = "Transkribiere...";
   const blob = await stopRecording(document.getElementById("timer-1a"));
@@ -273,17 +305,20 @@ document.getElementById("btn-stop-1a").addEventListener("click", async () => {
   } catch(e) {
     document.getElementById("status-1a").textContent = "Fehler: " + e.message;
   }
-});
+}
 
 // 1B
 document.getElementById("btn-rec-1b").addEventListener("click", async () => {
-  document.getElementById("status-1b").textContent = "Aufnahme läuft...";
+  document.getElementById("status-1b").textContent = "Aufnahme läuft... (2:10)";
   document.getElementById("btn-rec-1b").classList.add("hidden");
   document.getElementById("btn-stop-1b").classList.remove("hidden");
-  await startRecording(document.getElementById("timer-1b"));
+  await startRecording(document.getElementById("timer-1b"), 130, stop1B);
 });
-
-document.getElementById("btn-stop-1b").addEventListener("click", async () => {
+document.getElementById("btn-stop-1b").addEventListener("click", () => {
+  if (!isRecordingActive) return;
+  stop1B();
+});
+async function stop1B() {
   document.getElementById("btn-stop-1b").classList.add("hidden");
   document.getElementById("status-1b").textContent = "Transkribiere...";
   const blob = await stopRecording(document.getElementById("timer-1b"));
@@ -296,17 +331,20 @@ document.getElementById("btn-stop-1b").addEventListener("click", async () => {
   } catch(e) {
     document.getElementById("status-1b").textContent = "Fehler: " + e.message;
   }
-});
+}
 
 // 1C
 document.getElementById("btn-rec-1c").addEventListener("click", async () => {
-  document.getElementById("status-1c").textContent = "Aufnahme läuft...";
+  document.getElementById("status-1c").textContent = "Aufnahme läuft... (0:40)";
   document.getElementById("btn-rec-1c").classList.add("hidden");
   document.getElementById("btn-stop-1c").classList.remove("hidden");
-  await startRecording(document.getElementById("timer-1c"));
+  await startRecording(document.getElementById("timer-1c"), 40, stop1C);
 });
-
-document.getElementById("btn-stop-1c").addEventListener("click", async () => {
+document.getElementById("btn-stop-1c").addEventListener("click", () => {
+  if (!isRecordingActive) return;
+  stop1C();
+});
+async function stop1C() {
   document.getElementById("btn-stop-1c").classList.add("hidden");
   document.getElementById("status-1c").textContent = "Transkribiere...";
   const blob = await stopRecording(document.getElementById("timer-1c"));
@@ -319,7 +357,7 @@ document.getElementById("btn-stop-1c").addEventListener("click", async () => {
   } catch(e) {
     document.getElementById("status-1c").textContent = "Fehler: " + e.message;
   }
-});
+}
 
 // Bewertung
 document.getElementById("btn-eval").addEventListener("click", async () => {
