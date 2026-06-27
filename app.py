@@ -154,6 +154,30 @@ def api_teil1_docx():
     doc.add_heading("Feedback", level=3)
     doc.add_paragraph(ev.get("feedback", ""))
 
+    muster = ev.get("musterantworten")
+    if muster:
+        doc.add_heading("Ideale Antworten (B2-Niveau)", level=2)
+        doc.add_paragraph(
+            "Die folgenden Versionen zeigen, wie die einzelnen Teile auf "
+            "prüfungsausreichendem B2-Niveau hätten klingen können. "
+            "Themen und Argumente wurden beibehalten, nur die sprachlichen "
+            "Konstruktionen wurden verbessert."
+        )
+        if muster.get("monolog_1a"):
+            doc.add_heading("1A — Idealer Monolog", level=3)
+            doc.add_paragraph(muster["monolog_1a"])
+        antworten = muster.get("antworten_1b", [])
+        if antworten:
+            doc.add_heading("1B — Ideale Antworten auf die Prüferfragen", level=3)
+            for i, antwort in enumerate(antworten, 1):
+                frage = fragen_1b[i - 1] if i - 1 < len(fragen_1b) else f"Frage {i}"
+                p = doc.add_paragraph()
+                p.add_run(f"Frage {i}: {frage}").bold = True
+                doc.add_paragraph(antwort)
+        if muster.get("erlaeuterung_1c"):
+            doc.add_heading("1C — Ideale Erläuterung", level=3)
+            doc.add_paragraph(muster["erlaeuterung_1c"])
+
     buf = io.BytesIO()
     doc.save(buf)
     buf.seek(0)

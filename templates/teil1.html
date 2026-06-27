@@ -133,6 +133,8 @@ WICHTIGE PRÜFUNGSREGELN:
 - Auswendiglernen wird bestraft (wirkt unnatürlich).
 - 1C ist Mediation: TN soll paraphrasieren ("Im Grunde meinte er/sie, dass..."), NICHT wortwörtlich wiederholen.
 
+Erstelle zusätzlich ein "musterantworten"-Feld mit idealen B2-Versionen aller drei Teile. Behalte dabei die tatsächlichen Themen und Argumente des Lernenden bei — verbessere nur die sprachlichen Konstruktionen (Grammatik, Wortschatz, Satzbau, Sie-Form durchgehend). Das Ergebnis soll natürlich klingen, nicht akademisch.
+
 Schreibe ALLE Texte in korrektem Standarddeutsch mit echten Umlauten und Eszett (ä, ö, ü, ß) — NICHT als ae/oe/ue/ss.
 
 AUFGABE: Du bekommst die Transkripte von 1A, 1B (inkl. Prüferfragen) und 1C. Gib eine JSON-Antwort mit:
@@ -147,7 +149,12 @@ AUFGABE: Du bekommst die Transkripte von 1A, 1B (inkl. Prüferfragen) und 1C. Gi
  "max_p": 24,
  "staerken": ["...", "..."],
  "verbesserungen": ["...", "..."],
- "feedback": "kurzes zusammenfassendes Feedback auf Deutsch, motivierend aber ehrlich"
+ "feedback": "kurzes zusammenfassendes Feedback auf Deutsch, motivierend aber ehrlich",
+ "musterantworten": {
+   "monolog_1a": "idealer Monolog auf B2-Niveau — gleiche Themen und Argumente wie der Lernende, aber grammatisch korrekt, flüssig, mit passendem Wortschatz und Sie-Form",
+   "antworten_1b": ["ideale Antwort auf Prüferfrage 1", "ideale Antwort auf Prüferfrage 2"],
+   "erlaeuterung_1c": "ideale Erläuterung — paraphrasiert den Monolog in eigenen Worten, kein wörtliches Wiederholen"
+ }
 }
 Antworte NUR mit dem JSON, ohne Markdown-Codeblock.
 `;
