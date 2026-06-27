@@ -13,8 +13,15 @@ Server. Aus Transkript+Namen+Bewertung baut der Server bei Bedarf ein
 herunterladbares Word-Dokument fuer die Lehrkraft.
 """
 import io
+import os
 import random
+import smtplib
+import threading
 import time
+from email import encoders
+from email.mime.base import MIMEBase
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 
 from flask import Flask, jsonify, render_template, request, send_file
 from docx import Document
@@ -28,6 +35,10 @@ app = Flask(__name__)
 # In-memory only - reicht fuer einen Klassenraum-Prototyp, kein Neustart-Schutz.
 SESSIONS = {}
 SESSION_TTL = 60 * 60  # 1 Stunde
+
+TEACHER_EMAIL = os.environ.get("TEACHER_EMAIL", "rivanovichev@gmail.com")
+GMAIL_USER = os.environ.get("GMAIL_USER", "rivanovichev@gmail.com")
+GMAIL_APP_PASSWORD = os.environ.get("GMAIL_APP_PASSWORD", "")
 
 
 def _new_code():
@@ -251,15 +262,13 @@ def api_eval(code):
         return jsonify({"error": "not_found"}), 404
     if not s.get("eval"):
         s["eval"] = request.get_json(force=True)
+        threading.Thread(
+            target=_send_word_to_teacher, args=(code, s), daemon=True
+        ).start()
     return jsonify(s)
 
 
-@app.route("/api/session/<code>/docx")
-def api_docx(code):
-    s = SESSIONS.get(code)
-    if not s or not s.get("eval"):
-        return jsonify({"error": "not_ready"}), 404
-
+def _build_teil2_docx(code, s):
     merged, a_name, b_name = _merged_fragments(s)
     ev = s["eval"]
 
@@ -330,6 +339,48 @@ def api_docx(code):
     buf = io.BytesIO()
     doc.save(buf)
     buf.seek(0)
+    return buf
+
+
+def _send_word_to_teacher(code, s):
+    if not GMAIL_APP_PASSWORD:
+        return
+    try:
+        buf = _build_teil2_docx(code, s)
+        a_name = s["names"].get("a") or "Schueler A"
+        b_name = s["names"].get("b") or "Schueler B"
+
+        msg = MIMEMultipart()
+        msg["From"] = GMAIL_USER
+        msg["To"] = TEACHER_EMAIL
+        msg["Subject"] = f"DTB B2 Teil 2 — {a_name} & {b_name} (Sitzung {code})"
+        msg.attach(MIMEText(
+            f"Neue Sitzung abgeschlossen.\n\nCode: {code}\nTeilnehmer: {a_name} & {b_name}",
+            "plain", "utf-8"
+        ))
+        part = MIMEBase("application", "octet-stream")
+        part.set_payload(buf.read())
+        encoders.encode_base64(part)
+        part.add_header(
+            "Content-Disposition",
+            f'attachment; filename="DTB_B2_Teil2_{code}.docx"'
+        )
+        msg.attach(part)
+
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as srv:
+            srv.login(GMAIL_USER, GMAIL_APP_PASSWORD)
+            srv.send_message(msg)
+        print(f"[email] Word gesendet fuer Sitzung {code}")
+    except Exception as e:
+        print(f"[email] Fehler beim Senden: {e}")
+
+
+@app.route("/api/session/<code>/docx")
+def api_docx(code):
+    s = SESSIONS.get(code)
+    if not s or not s.get("eval"):
+        return jsonify({"error": "not_ready"}), 404
+    buf = _build_teil2_docx(code, s)
     return send_file(
         buf,
         as_attachment=True,

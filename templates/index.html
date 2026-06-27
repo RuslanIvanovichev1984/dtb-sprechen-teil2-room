@@ -37,7 +37,7 @@ button:disabled { background:#aaa; cursor:default; }
 
 <!-- CONTROL: Sitzung erstellen -->
 <div class="card hidden" id="card-control-create">
-  <h2>Sitzung erstellen (Lehrer-Laptop, nimmt KEIN Audio auf)</h2>
+  <h2>Sitzung erstellen (nimmt KEIN Audio auf)</h2>
   <button id="btn-create">Sitzung erstellen</button>
   <div id="created-info" class="hidden">
     <div class="code" id="display-code"></div>
@@ -103,8 +103,8 @@ document.getElementById("groqKey").addEventListener("change", e => {
   localStorage.setItem(GROQ_KEY_STORAGE, groqKey);
 });
 document.getElementById("key-hint").textContent = ROLE === "control"
-  ? "Dieser Key wird NUR fuer die abschliessende Bewertung (Text) genutzt, nicht fuer Audio."
-  : "Dieser Key wird genutzt, um DEINE Aufnahme zu transkribieren. Bleibt nur auf diesem Handy.";
+  ? "Wird fuer Themengenerierung und abschliessende Bewertung genutzt. Kein Audio, nur Text."
+  : "Wird genutzt, um deine Aufnahme zu transkribieren. Bleibt nur auf diesem Geraet.";
 
 let CODE = PRESET_CODE || null;
 let MY_CHANNEL = null; // nur fuer Rolle "phone": "a" oder "b"
