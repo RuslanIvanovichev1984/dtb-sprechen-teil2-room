@@ -85,6 +85,16 @@ def teil1_page():
     return render_template("teil1.html")
 
 
+@app.route("/teil3")
+def teil3_page():
+    return render_template("teil3.html", role="control", preset_code="")
+
+
+@app.route("/teil3/join/<code>")
+def teil3_phone_page(code):
+    return render_template("teil3.html", role="phone", preset_code=code)
+
+
 @app.route("/api/teil1/docx", methods=["POST"])
 def api_teil1_docx():
     body = request.get_json(force=True)
@@ -193,6 +203,7 @@ def api_teil1_docx():
 def api_create():
     _cleanup()
     code = _new_code()
+    body = request.get_json(force=True, silent=True) or {}
     SESSIONS[code] = {
         "created_at": time.time(),
         "joined": {"a": False, "b": False},
@@ -202,7 +213,8 @@ def api_create():
         "duration": None,
         "transcripts": {},  # "a" / "b" -> {fragments: [{start, end, text}]}
         "eval": None,
-        "impulskarten": None,  # {a, b} - vom Lehrer-Geraet per LLM generiert, ein Thema pro Sitzung
+        "impulskarten": None,
+        "teil": body.get("teil", "t2"),  # "t2" oder "t3"
     }
     return jsonify({"code": code})
 
@@ -366,20 +378,109 @@ def _build_teil2_docx(code, s):
     return buf
 
 
+def _build_teil3_docx(code, s):
+    merged, a_name, b_name = _merged_fragments(s)
+    ev = s["eval"]
+    karte_text = (s.get("impulskarten") or {}).get("a", "")
+
+    doc = Document()
+    doc.add_heading("DTB B2 — Sprechen Teil 3 — Ergebnis", level=1)
+    doc.add_paragraph(f"Sitzungscode: {code}")
+    doc.add_paragraph(f"Teilnehmer: {a_name} & {b_name}")
+
+    if karte_text:
+        doc.add_heading("Situationskarte", level=2)
+        doc.add_paragraph(karte_text)
+
+    doc.add_heading("Dialog-Transkript", level=2)
+    for frag in merged:
+        doc.add_paragraph(f"[{_fmt_time(round(frag['start']))}] {frag['speaker']}: {frag['text']}")
+
+    for key, name in (("schueler_a", a_name), ("schueler_b", b_name)):
+        res = ev.get(key, {})
+        doc.add_heading(f"Bewertung — {name}", level=2)
+        for krit, label in (
+            ("ki",   "K-I Kommunikative Aufgabenbewältigung"),
+            ("kii",  "K-II Aussprache/Intonation"),
+            ("kiii", "K-III Formale Richtigkeit"),
+            ("kiv",  "K-IV Spektrum sprachlicher Mittel"),
+        ):
+            k = res.get(krit, {})
+            stufe = k.get("stufe", "-")
+            bestanden_krit = stufe in ("A", "B")
+            icon = "✅" if bestanden_krit else "❌"
+            p = doc.add_paragraph()
+            r = p.add_run(f"{icon} {label}: Stufe {stufe}")
+            r.bold = True
+            r.font.color.rgb = GRUEN if bestanden_krit else ROT
+            doc.add_paragraph(k.get("kommentar", ""))
+
+        aufgabenvert = res.get("aufgabenverteilung")
+        p = doc.add_paragraph()
+        r = p.add_run(
+            "✅ Aufgabenverteilung vorhanden" if aufgabenvert
+            else "❌ Aufgabenverteilung fehlt (K-I max. Stufe C)"
+        )
+        r.bold = True
+        r.font.color.rgb = GRUEN if aufgabenvert else ROT
+
+        bestanden = res.get("bestanden_einschaetzung")
+        p = doc.add_paragraph()
+        r = p.add_run("✅ ausreichend für Teil 3" if bestanden else "❌ noch nicht ausreichend für Teil 3")
+        r.bold = True
+        r.font.color.rgb = GRUEN if bestanden else ROT
+
+        if res.get("staerken"):
+            doc.add_heading("Stärken", level=3)
+            for st in res["staerken"]:
+                par = doc.add_paragraph(style="List Bullet")
+                par.add_run(st).font.color.rgb = GRUEN
+
+        if res.get("verbesserungen"):
+            doc.add_heading("Verbesserungsvorschläge", level=3)
+            for v in res["verbesserungen"]:
+                par = doc.add_paragraph(style="List Bullet")
+                par.add_run(v).font.color.rgb = ROT
+
+        doc.add_heading("Feedback", level=3)
+        doc.add_paragraph(res.get("feedback", ""))
+
+    musterdialog = ev.get("musterdialog")
+    if musterdialog:
+        doc.add_heading("Ideales Muster-Gespräch (B2-Niveau)", level=2)
+        doc.add_paragraph(
+            "Die folgende korrigierte Version zeigt, wie die Diskussion auf "
+            "prüfungsausreichendem B2-Niveau ausgesehen hätte — mit Lösungsvorschlägen, "
+            "Reaktionen und Aufgabenverteilung am Ende."
+        )
+        for turn in musterdialog:
+            p = doc.add_paragraph()
+            r = p.add_run(f"{turn.get('speaker', '')}: ")
+            r.bold = True
+            p.add_run(turn.get("text", ""))
+
+    buf = io.BytesIO()
+    doc.save(buf)
+    buf.seek(0)
+    return buf
+
+
 def _send_word_to_teacher(code, s):
     if not GMAIL_APP_PASSWORD:
         return
     try:
-        buf = _build_teil2_docx(code, s)
+        teil = s.get("teil", "t2")
+        buf = _build_teil3_docx(code, s) if teil == "t3" else _build_teil2_docx(code, s)
         a_name = s["names"].get("a") or "Schueler A"
         b_name = s["names"].get("b") or "Schueler B"
 
         msg = MIMEMultipart()
         msg["From"] = GMAIL_USER
         msg["To"] = TEACHER_EMAIL
-        msg["Subject"] = f"DTB B2 Teil 2 — {a_name} & {b_name} (Sitzung {code})"
+        teil_nr = "3" if s.get("teil") == "t3" else "2"
+        msg["Subject"] = f"DTB B2 Teil {teil_nr} — {a_name} & {b_name} (Sitzung {code})"
         msg.attach(MIMEText(
-            f"Neue Sitzung abgeschlossen.\n\nCode: {code}\nTeilnehmer: {a_name} & {b_name}",
+            f"Neue Sitzung abgeschlossen.\n\nTeil: {teil_nr}\nCode: {code}\nTeilnehmer: {a_name} & {b_name}",
             "plain", "utf-8"
         ))
         part = MIMEBase("application", "octet-stream")
@@ -404,11 +505,17 @@ def api_docx(code):
     s = SESSIONS.get(code)
     if not s or not s.get("eval"):
         return jsonify({"error": "not_ready"}), 404
-    buf = _build_teil2_docx(code, s)
+    teil = s.get("teil", "t2")
+    if teil == "t3":
+        buf = _build_teil3_docx(code, s)
+        filename = f"DTB_B2_Teil3_{code}.docx"
+    else:
+        buf = _build_teil2_docx(code, s)
+        filename = f"DTB_B2_Teil2_{code}.docx"
     return send_file(
         buf,
         as_attachment=True,
-        download_name=f"DTB_B2_Teil2_{code}.docx",
+        download_name=filename,
         mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     )
 

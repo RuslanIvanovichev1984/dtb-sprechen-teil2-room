@@ -1,0 +1,513 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DTB B2 — Sprechen Teil 3</title>
+<style>
+body { font-family: 'Segoe UI', sans-serif; max-width: 760px; margin: 30px auto; padding: 0 16px; background:#f0f4f8; color:#222; }
+h1 { color:#1F3864; font-size:20px; }
+h2 { color:#1F3864; font-size:16px; margin-top:28px; }
+.card { background:#fff; border-radius:8px; padding:18px 22px; margin-bottom:18px; box-shadow:0 2px 6px rgba(0,0,0,.08); }
+label { font-weight:600; font-size:13px; display:block; margin-bottom:4px; }
+input[type=text] { width:100%; padding:8px; border:1px solid #ccc; border-radius:5px; font-size:14px; margin-bottom:10px; }
+button { background:#1F3864; color:#fff; border:none; padding:10px 16px; border-radius:6px; font-size:14px; cursor:pointer; margin-right:8px; }
+button:disabled { background:#aaa; cursor:default; }
+.status { font-size:13px; color:#777; margin-top:6px; }
+.code { font-size:32px; font-weight:700; letter-spacing:4px; color:#1F3864; text-align:center; margin:10px 0; }
+.aufgabe { background:#e8f5e9; border:1px solid #a5d6a7; border-radius:6px; padding:12px 16px; font-size:14px; margin:8px 0; }
+.aufgabe b { display:block; margin-bottom:4px; color:#1b5e20; }
+.timer { font-weight:700; color:#c62828; font-size:22px; }
+.transcript { background:#fffde7; border:1px solid #f9a825; border-radius:6px; padding:10px 14px; font-size:13px; white-space:pre-wrap; margin-top:8px; }
+.eval { white-space:pre-wrap; font-size:14px; line-height:1.5; }
+.hidden { display:none; }
+.badge { display:inline-block; background:#1F3864; color:#fff; border-radius:5px; padding:4px 10px; font-size:13px; font-weight:600; }
+.hold-btn { display:block; width:100%; padding:28px; font-size:18px; font-weight:700; border-radius:10px; background:#2e7d32; touch-action:none; -webkit-user-select:none; user-select:none; margin-top:14px; }
+.hold-btn.active { background:#c62828; }
+</style>
+</head>
+<body>
+
+<h1>DTB B2 — Sprechen Teil 3</h1>
+
+<div class="card">
+  <label for="groqKey">Groq API-Key (gsk_...)</label>
+  <input type="text" id="groqKey" placeholder="gsk_...">
+  <div class="status" id="key-hint"></div>
+</div>
+
+<!-- CONTROL: Sitzung erstellen -->
+<div class="card hidden" id="card-control-create">
+  <h2>Sitzung erstellen (nimmt KEIN Audio auf)</h2>
+  <button id="btn-create">Sitzung erstellen</button>
+  <div id="created-info" class="hidden">
+    <div class="code" id="display-code"></div>
+    <div class="status">Beide Teilnehmer öffnen auf ihrem EIGENEN Gerät:</div>
+    <div class="status"><b id="join-url"></b></div>
+    <div class="status" id="status-control-wait">Warte, bis sich beide Geräte verbinden...</div>
+  </div>
+</div>
+
+<!-- PHONE: Beitreten -->
+<div class="card hidden" id="card-phone-join">
+  <h2>Sitzung beitreten</h2>
+  <div class="status">Code: <b id="phone-code-display"></b></div>
+  <label for="myName">Dein Name</label>
+  <input type="text" id="myName" placeholder="Vorname">
+  <button id="btn-join">Beitreten</button>
+  <div class="status" id="status-phone-join"></div>
+</div>
+
+<!-- Bereit -->
+<div class="card hidden" id="card-start">
+  <h2>Teil 3 — Bereit</h2>
+  <div id="situation-box" class="hidden"></div>
+  <button id="btn-start" class="hidden">Teil 3 starten (4 Min)</button>
+  <div class="status" id="status-start"></div>
+</div>
+
+<!-- Aufnahme -->
+<div class="card hidden" id="card-recording">
+  <h2>Aufnahme läuft</h2>
+  <div id="situation-recording" class="hidden"></div>
+  <div class="timer" id="timer">04:00</div>
+  <button id="btn-hold" class="hold-btn hidden">Halten zum Sprechen</button>
+  <div class="status" id="status-recording">Diskutiert jetzt — Lösungen vorschlagen, reagieren, am Ende Aufgaben verteilen!</div>
+</div>
+
+<!-- Nach Aufnahme (Handy) -->
+<div class="card hidden" id="card-own-transcript">
+  <h2>Aufnahme abgeschlossen</h2>
+  <div class="status" id="status-own"></div>
+</div>
+
+<!-- Ergebnis (Laptop) -->
+<div class="card hidden" id="card-result">
+  <h2>Ergebnis</h2>
+  <div class="status" id="status-result"></div>
+  <div class="transcript hidden" id="merged-transcript"></div>
+  <div class="eval" id="eval-result"></div>
+</div>
+
+<script>
+const ROLE = "{{ role }}";
+const PRESET_CODE = "{{ preset_code }}";
+
+const GROQ_KEY_STORAGE = "groqKey_" + ROLE;
+let groqKey = localStorage.getItem(GROQ_KEY_STORAGE) || "";
+document.getElementById("groqKey").value = groqKey;
+document.getElementById("groqKey").addEventListener("change", e => {
+  groqKey = e.target.value.trim();
+  localStorage.setItem(GROQ_KEY_STORAGE, groqKey);
+});
+document.getElementById("key-hint").textContent = ROLE === "control"
+  ? "Wird für Situationsgenerierung und Bewertung genutzt. Kein Audio, nur Text."
+  : "Wird genutzt, um deine Aufnahme zu transkribieren. Bleibt nur auf diesem Gerät.";
+
+let CODE = PRESET_CODE || null;
+let MY_CHANNEL = null;
+let MY_NAME = null;
+let pollHandle = null;
+let armedHandled = false;
+
+let micStream = null;
+let sessionStartMs = null;
+let pressRecorder = null;
+let pressChunks = [];
+let pressStartRel = null;
+let fragments = [];
+let pendingTranscriptions = [];
+
+const FALLBACK_SITUATIONEN = [
+  {
+    situation: "In Ihrer Abteilung ist ein wichtiger Kollege/eine wichtige Kollegin krank geworden und kann mehrere Wochen nicht arbeiten. Die Arbeit muss trotzdem erledigt werden.",
+    aufgabe: "Besprechen Sie, wie Sie die Aufgaben des erkrankten Kollegen/der erkrankten Kollegin aufteilen können. Einigen Sie sich auf eine Lösung und verteilen Sie die Aufgaben.",
+    stichpunkte: ["Welche Aufgaben sind dringend?", "Wer übernimmt was?", "Brauchen Sie externe Hilfe?"]
+  },
+  {
+    situation: "In Ihrem Betrieb ist eine wichtige Maschine/Software ausgefallen. Die Produktion/Arbeit ist beeinträchtigt.",
+    aufgabe: "Besprechen Sie, wie Sie das Problem lösen können. Einigen Sie sich auf konkrete Schritte und verteilen Sie die Aufgaben.",
+    stichpunkte: ["Was sind die Ursachen?", "Welche Sofortmaßnahmen sind möglich?", "Wie informieren Sie die Vorgesetzte/den Vorgesetzten?"]
+  }
+];
+
+const SITUATION_PROMPT = `
+Du erstellst Situationskarten für "Deutsch-Test für den Beruf B2" (DTB B2), Sprechen Teil 3 (Lösungswege diskutieren, beruflicher Kontext, ~4 Minuten, beide Teilnehmenden bekommen DIESELBE Karte).
+
+Typische Situationstypen (wähle jedes Mal einen anderen): falsche Lieferung, Ausfall eines Kollegen/einer Kollegin, Kommunikationsproblem im Team, technische Störung, Qualitätsproblem, Personalengpass, neue Software einführen, Kundenbeschwerden, Arbeitssicherheitsproblem.
+
+Erstelle EINE berufliche Situation mit:
+1. "situation": kurze Situationsbeschreibung (2-3 Sätze, neutral formuliert, kein Du/Sie vorgegeben)
+2. "aufgabe": klare Aufgabenstellung für beide TN ("Besprechen Sie...Einigen Sie sich...Verteilen Sie die Aufgaben.")
+3. "stichpunkte": 3 Leitfragen/Aspekte als Gesprächshilfe
+
+Schreibe in korrektem Deutsch mit echten Umlauten und Eszett (ä, ö, ü, ß).
+
+Gib NUR folgendes JSON zurück (kein Markdown):
+{"situation": "...", "aufgabe": "...", "stichpunkte": ["...", "...", "..."]}
+`;
+
+const TEIL3_PROMPT = `
+Du bist ein lizenzierter Prüfer/Assessor für "Deutsch-Test für den Beruf B2" (DTB B2, BAMF/telc), Sprechen Teil 3 (Lösungswege diskutieren, beruflicher Kontext, beide TN haben DIESELBE Aufgabenkarte, ~4 Minuten).
+
+Du bekommst ein chronologisches Transkript. Jede Zeile beginnt mit [Zeit] Name (A): ... oder Name (B): ... — das (A)/(B) markiert IMMER zuverlässig, wem die Äußerung gehört.
+
+Bewerte JEDE Person EINZELN nach folgenden Kriterien (A/B/C/D):
+
+K-I Kommunikative Aufgabenbewältigung (10 P: A=10, B=7.5, C=4, D=0):
+Prüfe für JEDE Person:
+- Hat die Person eigene Lösungsvorschläge eingebracht (nicht nur zugestimmt)?
+- Hat sie auf Vorschläge des Partners reagiert (zugestimmt, Bedenken geäußert, Alternativen vorgeschlagen)?
+- War eine echte Diskussion erkennbar (kein bloßes gegenseitiges Nicken)?
+- PFLICHT: War die Person an der Aufgabenverteilung am Ende beteiligt?
+WICHTIG: Wenn KEINE Aufgabenverteilung stattgefunden hat → K-I kann MAXIMAL Stufe C sein, egal wie gut die Diskussion war.
+
+K-II Aussprache/Intonation: NUR aus Transkript ableitbar (Selbstkorrekturen, Abbrüche als Hinweis) — markiere Einschränkung im Feedback.
+K-III Formale Richtigkeit (Grammatik, Konjunktiv II für Vorschläge ein Plus).
+K-IV Spektrum sprachlicher Mittel (Redemittel für Vorschläge/Zustimmung/Ablehnung/Kompromiss, Nominalverbindungen).
+
+Erstelle zusätzlich ein "musterdialog"-Feld: eine korrigierte Version des Gesprächs, die zeigt, wie die Diskussion auf prüfungsausreichendem B2-Niveau ausgesehen hätte — inklusive Lösungsvorschläge, Reaktionen UND Aufgabenverteilung am Ende. Behalte die tatsächlichen Ideen der Lernenden bei, verbessere nur Sprache und Struktur. Natürlich klingen, nicht akademisch. Verwende die tatsächlichen Vornamen (ohne "(A)"/"(B)").
+
+Schreibe ALLE Texte in korrektem Standarddeutsch mit echten Umlauten und Eszett (ä, ö, ü, ß) — NICHT als ae/oe/ue/ss.
+
+Gib NUR folgendes JSON zurück (kein Markdown), schueler_a = Person (A), schueler_b = Person (B):
+{
+  "schueler_a": {
+    "ki":{"stufe":"A/B/C/D","kommentar":"..."}, "kii":{"stufe":"...","kommentar":"..."}, "kiii":{"stufe":"...","kommentar":"..."}, "kiv":{"stufe":"...","kommentar":"..."},
+    "aufgabenverteilung": true/false,
+    "bestanden_einschaetzung": true/false,
+    "staerken": ["...", "..."],
+    "verbesserungen": ["...", "..."],
+    "feedback": "ausführliches, konkretes Feedback: Lösungsvorschläge, Reaktionen, Aufgabenverteilung, ob das Niveau für Teil 3 ausreicht"
+  },
+  "schueler_b": { ... gleiche Struktur ... },
+  "musterdialog": [
+    {"speaker": "Vorname", "text": "korrigierter/idealer Dialogzug"},
+    ...
+  ]
+}
+`;
+
+async function generateSituationskarte() {
+  let karte;
+  try {
+    const raw = await chat([{ role: "system", content: SITUATION_PROMPT }], true);
+    karte = JSON.parse(raw);
+  } catch (e) {
+    karte = FALLBACK_SITUATIONEN[Math.floor(Math.random() * FALLBACK_SITUATIONEN.length)];
+  }
+  const text = formatKarte(karte);
+  window._karte = karte;
+  try {
+    await apiPost(`/api/session/${CODE}/impulskarten`, { a: text, b: text });
+  } catch (e) {}
+}
+
+function formatKarte(k) {
+  const punkte = (k.stichpunkte || []).map(s => "• " + s).join("\n");
+  return `Situation: ${k.situation}\n\nAufgabe: ${k.aufgabe}\n\n${punkte}`;
+}
+
+function renderKarte(text) {
+  return `<div class="aufgabe"><b>Gemeinsame Aufgabe:</b>${text.replace(/\n/g, "<br>")}</div>`;
+}
+
+function fmtTime(s) {
+  const m = Math.floor(s/60).toString().padStart(2,"0");
+  const sec = (s%60).toString().padStart(2,"0");
+  return `${m}:${sec}`;
+}
+
+async function apiGet(path) {
+  const r = await fetch(path);
+  return r.json();
+}
+async function apiPost(path, body) {
+  const r = await fetch(path, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body||{}) });
+  return r.json();
+}
+
+if (ROLE === "control") {
+  document.getElementById("card-control-create").classList.remove("hidden");
+  document.getElementById("btn-create").addEventListener("click", async () => {
+    const res = await apiPost("/api/create", { teil: "t3" });
+    CODE = res.code;
+    document.getElementById("display-code").textContent = CODE;
+    document.getElementById("join-url").textContent = window.location.origin + "/teil3/join/" + CODE;
+    document.getElementById("created-info").classList.remove("hidden");
+    document.getElementById("btn-create").disabled = true;
+    pollSession();
+    generateSituationskarte();
+  });
+}
+
+if (ROLE === "phone") {
+  document.getElementById("card-phone-join").classList.remove("hidden");
+  document.getElementById("phone-code-display").textContent = CODE || "(kein Code)";
+  document.getElementById("btn-join").addEventListener("click", async () => {
+    const name = document.getElementById("myName").value.trim();
+    const res = await apiPost(`/api/session/${CODE}/join`, { name });
+    if (res.error) {
+      document.getElementById("status-phone-join").textContent = "Fehler: " + res.error;
+      return;
+    }
+    MY_CHANNEL = res.channel;
+    MY_NAME = (res.session.names && res.session.names[MY_CHANNEL]) || name || `TN ${MY_CHANNEL.toUpperCase()}`;
+    document.getElementById("status-phone-join").textContent = `Beigetreten als ${MY_NAME}. Warte auf Partner...`;
+    document.getElementById("btn-join").disabled = true;
+    pollSession();
+  });
+}
+
+function pollSession() {
+  if (pollHandle) clearInterval(pollHandle);
+  pollHandle = setInterval(async () => {
+    const s = await apiGet(`/api/session/${CODE}`);
+    if (s.error) return;
+    handleSessionUpdate(s);
+  }, 800);
+}
+
+function handleSessionUpdate(s) {
+  if (s.status === "ready" && document.getElementById("card-start").classList.contains("hidden")) {
+    if (!s.impulskarten) {
+      if (ROLE === "control") document.getElementById("status-control-wait").textContent = "Beide verbunden. Generiere Situation...";
+      return;
+    }
+    if (ROLE === "control") document.getElementById("status-control-wait").textContent = "Beide Geräte verbunden!";
+    showStartCard(s);
+  }
+  if (s.status === "armed" && !armedHandled) {
+    armedHandled = true;
+    scheduleStart(s.start_at, s.duration);
+  }
+  if (s.status === "done") {
+    handleDone(s);
+  }
+}
+
+async function handleDone(s) {
+  if (!window._doneShown) {
+    window._doneShown = true;
+    document.getElementById("card-result").classList.remove("hidden");
+    document.getElementById("status-result").textContent = ROLE === "control"
+      ? "Beide Transkripte da. Bewerte..."
+      : "Fertig. Der Laptop zeigt das Ergebnis.";
+  }
+  if (s.eval) {
+    if (ROLE === "control" && !window._evalShown) {
+      window._evalShown = true;
+      document.getElementById("merged-transcript").textContent = mergeTranscripts(s);
+      document.getElementById("merged-transcript").classList.remove("hidden");
+      document.getElementById("eval-result").textContent = JSON.stringify(s.eval, null, 2);
+      document.getElementById("status-result").textContent = "Fertig.";
+      const dl = document.createElement("a");
+      dl.href = `/api/session/${CODE}/docx`;
+      dl.textContent = "Word-Datei herunterladen";
+      dl.style.display = "inline-block";
+      dl.style.marginTop = "10px";
+      document.getElementById("card-result").appendChild(dl);
+    }
+    return;
+  }
+  if (!window._evalAttempted) {
+    window._evalAttempted = true;
+    await runEvaluation(s);
+  }
+}
+
+function showStartCard(s) {
+  document.getElementById("card-start").classList.remove("hidden");
+  const karteText = s.impulskarten.a;
+  window._karteText = karteText;
+  const box = document.getElementById("situation-box");
+  box.classList.remove("hidden");
+  box.innerHTML = renderKarte(karteText);
+
+  document.getElementById("btn-start").classList.remove("hidden");
+  document.getElementById("btn-start").addEventListener("click", async () => {
+    document.getElementById("btn-start").disabled = true;
+    await apiPost(`/api/session/${CODE}/start`, { duration: 240 });
+  });
+  document.getElementById("status-start").textContent = ROLE === "control"
+    ? "Klicke Start, wenn beide bereit sind."
+    : "Klicke Start, wenn ihr beide bereit seid.";
+}
+
+function scheduleStart(startAtEpoch, duration) {
+  const delayMs = Math.max(0, startAtEpoch * 1000 - Date.now());
+  document.getElementById("status-start").textContent = `Start in ${Math.round(delayMs/1000)} Sek...`;
+  setTimeout(() => {
+    if (ROLE === "phone") {
+      beginRecording(duration);
+    } else {
+      beginControlWait(duration);
+    }
+  }, delayMs);
+}
+
+function showSituationRecording() {
+  const text = window._karteText || "";
+  if (!text) return;
+  const box = document.getElementById("situation-recording");
+  box.classList.remove("hidden");
+  box.innerHTML = renderKarte(text);
+}
+
+function beginControlWait(duration) {
+  document.getElementById("card-start").classList.add("hidden");
+  document.getElementById("card-recording").classList.remove("hidden");
+  showSituationRecording();
+  document.getElementById("status-recording").textContent = "Beide Geräte nehmen auf — bitte warten...";
+  let remaining = duration;
+  document.getElementById("timer").textContent = fmtTime(remaining);
+  const interval = setInterval(() => {
+    remaining--;
+    document.getElementById("timer").textContent = fmtTime(Math.max(0, remaining));
+    if (remaining <= 0) {
+      clearInterval(interval);
+      document.getElementById("card-recording").classList.add("hidden");
+    }
+  }, 1000);
+}
+
+function relSeconds() {
+  return (Date.now() - sessionStartMs) / 1000;
+}
+
+function startPress() {
+  if (pressRecorder || !micStream) return;
+  pressChunks = [];
+  pressStartRel = relSeconds();
+  pressRecorder = new MediaRecorder(micStream);
+  pressRecorder.ondataavailable = e => { if (e.data.size) pressChunks.push(e.data); };
+  pressRecorder.start();
+  document.getElementById("btn-hold").classList.add("active");
+  document.getElementById("status-recording").textContent = "Du sprichst...";
+}
+
+function stopPress() {
+  if (!pressRecorder) return;
+  const rec = pressRecorder;
+  const startRel = pressStartRel;
+  pressRecorder = null;
+  const endRel = relSeconds();
+  document.getElementById("btn-hold").classList.remove("active");
+  document.getElementById("status-recording").textContent = "Halten zum Sprechen.";
+  const donePromise = new Promise(resolve => {
+    rec.onstop = async () => {
+      if (endRel - startRel < 0.3) { resolve(); return; }
+      const blob = new Blob(pressChunks, { type: "audio/webm" });
+      try {
+        const text = await transcribePlain(blob);
+        if (text) fragments.push({ start: startRel, end: endRel, text });
+      } catch (e) {
+        console.warn("Transkriptions-Fehler:", e);
+      }
+      resolve();
+    };
+    rec.stop();
+  });
+  pendingTranscriptions.push(donePromise);
+}
+
+async function beginRecording(duration) {
+  document.getElementById("card-start").classList.add("hidden");
+  document.getElementById("card-recording").classList.remove("hidden");
+  document.getElementById("btn-hold").classList.remove("hidden");
+  showSituationRecording();
+  fragments = [];
+  pendingTranscriptions = [];
+  micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  sessionStartMs = Date.now();
+  let remaining = duration;
+  document.getElementById("timer").textContent = fmtTime(remaining);
+  const interval = setInterval(() => {
+    remaining--;
+    document.getElementById("timer").textContent = fmtTime(Math.max(0, remaining));
+    if (remaining <= 0) {
+      clearInterval(interval);
+      finishRecording();
+    }
+  }, 1000);
+}
+
+async function finishRecording() {
+  stopPress();
+  document.getElementById("btn-hold").classList.add("hidden");
+  document.getElementById("status-recording").textContent = "Verarbeite letzte Aufnahmen...";
+  await Promise.all(pendingTranscriptions);
+  micStream.getTracks().forEach(t => t.stop());
+  document.getElementById("card-recording").classList.add("hidden");
+  document.getElementById("card-own-transcript").classList.remove("hidden");
+  fragments.sort((a, b) => a.start - b.start);
+  document.getElementById("status-own").textContent = "Sende an Sitzung...";
+  try {
+    await apiPost(`/api/session/${CODE}/transcript/${MY_CHANNEL}`, { fragments });
+    document.getElementById("status-own").textContent = "Fertig. Bitte beim Laptop weiterschauen.";
+  } catch (e) {
+    document.getElementById("status-own").textContent = "Fehler: " + e.message;
+  }
+}
+
+async function transcribePlain(blob) {
+  const fd = new FormData();
+  fd.append("file", blob, "audio.webm");
+  fd.append("model", "whisper-large-v3");
+  fd.append("language", "de");
+  const resp = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", {
+    method: "POST",
+    headers: { "Authorization": "Bearer " + groqKey },
+    body: fd
+  });
+  if (!resp.ok) throw new Error("Whisper-Fehler: " + await resp.text());
+  const json = await resp.json();
+  return (json.text || "").trim();
+}
+
+document.getElementById("btn-hold").addEventListener("pointerdown", e => { e.preventDefault(); startPress(); });
+document.getElementById("btn-hold").addEventListener("pointerup", stopPress);
+document.getElementById("btn-hold").addEventListener("pointercancel", stopPress);
+document.getElementById("btn-hold").addEventListener("pointerleave", stopPress);
+document.getElementById("btn-hold").addEventListener("contextmenu", e => e.preventDefault());
+
+async function chat(messages, jsonMode) {
+  const body = { model: "llama-3.3-70b-versatile", messages };
+  if (jsonMode) body.response_format = { type: "json_object" };
+  const resp = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    method: "POST",
+    headers: { "Authorization": "Bearer " + groqKey, "Content-Type": "application/json" },
+    body: JSON.stringify(body)
+  });
+  if (!resp.ok) throw new Error("LLM-Fehler: " + await resp.text());
+  const json = await resp.json();
+  return json.choices[0].message.content;
+}
+
+function mergeTranscripts(s) {
+  const aName = (s.names && s.names.a) || "TN A";
+  const bName = (s.names && s.names.b) || "TN B";
+  const a = (s.transcripts.a.fragments || []).map(f => ({ ...f, speaker: `${aName} (A)` }));
+  const b = (s.transcripts.b.fragments || []).map(f => ({ ...f, speaker: `${bName} (B)` }));
+  return a.concat(b).sort((x, y) => x.start - y.start)
+    .map(f => `[${fmtTime(Math.round(f.start))}] ${f.speaker}: ${f.text}`).join("\n");
+}
+
+async function runEvaluation(s) {
+  const merged = mergeTranscripts(s);
+  const karte = s.impulskarten ? s.impulskarten.a : "";
+  try {
+    const raw = await chat([
+      { role: "system", content: TEIL3_PROMPT },
+      { role: "user", content: `Situationskarte:\n${karte}\n\nTranskript:\n${merged}` }
+    ], true);
+    const result = JSON.parse(raw);
+    await apiPost(`/api/session/${CODE}/eval`, result);
+  } catch (e) {
+    window._evalAttempted = false;
+    if (ROLE === "control") document.getElementById("status-result").textContent = "Fehler: " + e.message;
+  }
+}
+</script>
+</body>
+</html>
