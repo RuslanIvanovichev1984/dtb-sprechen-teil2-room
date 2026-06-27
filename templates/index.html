@@ -23,11 +23,23 @@ button:disabled { background:#aaa; cursor:default; }
 .badge { display:inline-block; background:#1F3864; color:#fff; border-radius:5px; padding:4px 10px; font-size:13px; font-weight:600; }
 .hold-btn { display:block; width:100%; padding:28px; font-size:18px; font-weight:700; border-radius:10px; background:#2e7d32; touch-action:none; -webkit-user-select:none; user-select:none; margin-top:14px; }
 .hold-btn.active { background:#c62828; }
+nav { display:flex; gap:4px; margin-bottom:20px; background:#fff; border-radius:8px; padding:6px; box-shadow:0 2px 6px rgba(0,0,0,.08); }
+nav a { flex:1; text-align:center; padding:10px; border-radius:6px; font-size:13px; font-weight:600; color:#1F3864; text-decoration:none; }
+nav a:hover { background:#e3f2fd; }
+nav a.active { background:#1F3864; color:#fff; }
 </style>
 </head>
 <body>
 
-<h1>DTB B2 — Sprechen Teil 2 (Raum-Prototyp)</h1>
+{% if role == "control" %}
+<nav>
+  <a href="/teil1">Teil 1 — Solo</a>
+  <a href="/" class="active">Teil 2 — Pausengespräch</a>
+  <a href="/teil3">Teil 3 — Lösungswege</a>
+</nav>
+{% endif %}
+
+<h1>DTB B2 — Sprechen Teil 2</h1>
 
 <div class="card">
   <label for="groqKey">Groq API-Key (gsk_...)</label>

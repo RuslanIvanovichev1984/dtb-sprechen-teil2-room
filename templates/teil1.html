@@ -15,15 +15,24 @@ button { background:#1F3864; color:#fff; border:none; padding:10px 16px; border-
 button:disabled { background:#aaa; cursor:default; }
 button.stop { background:#c62828; }
 .status { font-size:13px; color:#777; margin-top:6px; }
-.code { font-size:32px; font-weight:700; letter-spacing:4px; color:#1F3864; text-align:center; margin:10px 0; }
 .frage { background:#e3f2fd; border:1px solid #90caf9; border-radius:6px; padding:10px 14px; font-size:14px; margin:8px 0; }
 .timer { font-weight:700; color:#c62828; font-size:18px; }
 .transcript { background:#fffde7; border:1px solid #f9a825; border-radius:6px; padding:10px 14px; font-size:13px; white-space:pre-wrap; margin-top:8px; }
 .eval { white-space:pre-wrap; font-size:14px; line-height:1.5; }
 .hidden { display:none; }
+nav { display:flex; gap:4px; margin-bottom:20px; background:#fff; border-radius:8px; padding:6px; box-shadow:0 2px 6px rgba(0,0,0,.08); }
+nav a { flex:1; text-align:center; padding:10px; border-radius:6px; font-size:13px; font-weight:600; color:#1F3864; text-decoration:none; }
+nav a:hover { background:#e3f2fd; }
+nav a.active { background:#1F3864; color:#fff; }
 </style>
 </head>
 <body>
+
+<nav>
+  <a href="/teil1" class="active">Teil 1 — Solo</a>
+  <a href="/">Teil 2 — Pausengespräch</a>
+  <a href="/teil3">Teil 3 — Lösungswege</a>
+</nav>
 
 <h1>DTB B2 — Sprechen Teil 1</h1>
 
