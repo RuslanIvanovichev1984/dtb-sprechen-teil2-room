@@ -215,6 +215,8 @@ def api_create():
         "eval": None,
         "impulskarten": None,
         "teil": body.get("teil", "t2"),  # "t2" oder "t3"
+        "speaking": {"a": False, "b": False},  # live indicator
+        "live_fragments": [],  # [{channel, start, end, text}] - for live display during recording
     }
     return jsonify({"code": code})
 
@@ -289,6 +291,34 @@ def api_transcript(code, channel):
     if "a" in s["transcripts"] and "b" in s["transcripts"]:
         s["status"] = "done"
     return jsonify(s)
+
+
+@app.route("/api/session/<code>/speaking", methods=["POST"])
+def api_speaking(code):
+    s = SESSIONS.get(code)
+    if not s:
+        return jsonify({"error": "not_found"}), 404
+    body = request.get_json(force=True)
+    channel = body.get("channel")
+    if channel in ("a", "b"):
+        s.setdefault("speaking", {"a": False, "b": False})
+        s["speaking"][channel] = bool(body.get("speaking", False))
+    return jsonify({"ok": True})
+
+
+@app.route("/api/session/<code>/live_fragment", methods=["POST"])
+def api_live_fragment(code):
+    s = SESSIONS.get(code)
+    if not s:
+        return jsonify({"error": "not_found"}), 404
+    body = request.get_json(force=True)
+    s.setdefault("live_fragments", []).append({
+        "channel": body.get("channel"),
+        "start": body.get("start"),
+        "end": body.get("end"),
+        "text": body.get("text", ""),
+    })
+    return jsonify({"ok": True})
 
 
 @app.route("/api/session/<code>/eval", methods=["POST"])

@@ -42,6 +42,11 @@ button:disabled { background:#aaa; cursor:default; }
 .badge { display:inline-block; background:#1F3864; color:#fff; border-radius:5px; padding:4px 10px; font-size:13px; font-weight:600; }
 .hold-btn { display:block; width:100%; padding:28px; font-size:18px; font-weight:700; border-radius:10px; background:#2e7d32; touch-action:none; -webkit-user-select:none; user-select:none; margin-top:14px; }
 .hold-btn.active { background:#c62828; }
+.speaking-ind { display:inline-block; background:#fff3e0; border:1px solid #ffb300; color:#e65100; padding:4px 12px; border-radius:16px; font-size:13px; font-weight:600; margin:4px 4px 4px 0; }
+.live-dialog { max-height:180px; overflow-y:auto; background:#f5f5f5; border-radius:6px; padding:8px 10px; margin-top:8px; font-size:13px; }
+.live-turn { padding:3px 0; border-bottom:1px solid #e0e0e0; }
+.live-turn:last-child { border-bottom:none; }
+.live-speaker { font-weight:700; color:#1F3864; }
 nav { display:flex; gap:4px; margin-bottom:20px; background:#fff; border-radius:8px; padding:6px; box-shadow:0 2px 6px rgba(0,0,0,.08); }
 nav a { flex:1; text-align:center; padding:10px; border-radius:6px; font-size:13px; font-weight:600; color:#1F3864; text-decoration:none; }
 nav a:hover { background:#e3f2fd; }
@@ -105,6 +110,8 @@ nav a.active { background:#1F3864; color:#fff; }
   <button id="btn-thema2" class="hidden">Jetzt: Thema 2 vorlesen</button>
   <button id="btn-hold" class="hold-btn hidden">Halten zum Sprechen</button>
   <div class="status" id="status-recording">Sprecht jetzt - Du-Form!</div>
+  <div id="speaking-indicator" style="min-height:30px; margin-top:10px;"></div>
+  <div id="live-dialog" class="live-dialog hidden"></div>
 </div>
 
 <!-- Nach der Aufnahme (nur Handy) - bewusst OHNE Transkript-Anzeige, damit Lernende
@@ -267,8 +274,30 @@ function handleSessionUpdate(s) {
     armedHandled = true;
     scheduleStart(s.start_at, s.duration);
   }
+  updateLiveDisplay(s);
   if (s.status === "done") {
     handleDone(s);
+  }
+}
+
+function updateLiveDisplay(s) {
+  if (document.getElementById("card-recording").classList.contains("hidden")) return;
+  const aName = (s.names && s.names.a) || "A";
+  const bName = (s.names && s.names.b) || "B";
+  const speaking = s.speaking || { a: false, b: false };
+  let ind = "";
+  if (speaking.a) ind += `<span class="speaking-ind">🎙 ${aName} spricht...</span>`;
+  if (speaking.b) ind += `<span class="speaking-ind">🎙 ${bName} spricht...</span>`;
+  document.getElementById("speaking-indicator").innerHTML = ind;
+  const frags = s.live_fragments;
+  if (frags && frags.length) {
+    const el = document.getElementById("live-dialog");
+    el.classList.remove("hidden");
+    el.innerHTML = frags.map(f => {
+      const name = f.channel === "a" ? aName : bName;
+      return `<div class="live-turn"><span class="live-speaker">${name}:</span> ${f.text}</div>`;
+    }).join("");
+    el.scrollTop = el.scrollHeight;
   }
 }
 
@@ -397,6 +426,7 @@ function playBeeps(times) {
 
 function startPress() {
   if (pressRecorder || !micStream) return;
+  apiPost(`/api/session/${CODE}/speaking`, { channel: MY_CHANNEL, speaking: true });
   pressChunks = [];
   pressStartRel = relSeconds();
   pressRecorder = new MediaRecorder(micStream);
@@ -414,6 +444,7 @@ function stopPress() {
   const endRel = relSeconds();
   document.getElementById("btn-hold").classList.remove("active");
   document.getElementById("status-recording").textContent = "Knopf halten, um zu sprechen.";
+  apiPost(`/api/session/${CODE}/speaking`, { channel: MY_CHANNEL, speaking: false });
   const donePromise = new Promise(resolve => {
     rec.onstop = async () => {
       if (endRel - startRel < 0.3) { resolve(); return; } // zu kurzer Druck, ignorieren
@@ -422,6 +453,7 @@ function stopPress() {
         const text = await transcribePlain(blob);
         if (text) {
           fragments.push({ start: startRel, end: endRel, text });
+          apiPost(`/api/session/${CODE}/live_fragment`, { channel: MY_CHANNEL, start: startRel, end: endRel, text });
         }
       } catch (e) {
         console.warn("Transkriptions-Fehler:", e);
