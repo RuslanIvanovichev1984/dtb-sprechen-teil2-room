@@ -77,12 +77,14 @@ nav a.active { background:#1F3864; color:#fff; }
 <!-- CONTROL: Sitzung erstellen -->
 <div class="card hidden" id="card-control-create">
   <h2>Sitzung erstellen</h2>
+  <label for="myNameCreate">Dein Name</label>
+  <input type="text" id="myNameCreate" placeholder="Vorname">
   <button id="btn-create">Sitzung erstellen</button>
   <div id="created-info" class="hidden">
     <div class="code" id="display-code"></div>
-    <div class="status">Beide Teilnehmer öffnen auf ihrem EIGENEN Gerät:</div>
+    <div class="status">Partner öffnet auf seinem Gerät:</div>
     <div class="status"><b id="join-url"></b></div>
-    <div class="status" id="status-control-wait">Warte, bis sich beide Geräte verbinden...</div>
+    <div class="status" id="status-control-wait">Warte auf Partner...</div>
   </div>
 </div>
 
@@ -270,12 +272,16 @@ async function apiPost(path, body) {
 if (ROLE === "control") {
   document.getElementById("card-control-create").classList.remove("hidden");
   document.getElementById("btn-create").addEventListener("click", async () => {
+    const name = document.getElementById("myNameCreate").value.trim();
     const res = await apiPost("/api/create", { teil: "t3" });
     CODE = res.code;
     document.getElementById("display-code").textContent = CODE;
     document.getElementById("join-url").textContent = window.location.origin + "/teil3/join/" + CODE;
     document.getElementById("created-info").classList.remove("hidden");
     document.getElementById("btn-create").disabled = true;
+    const joinRes = await apiPost(`/api/session/${CODE}/join`, { name });
+    MY_CHANNEL = joinRes.channel;
+    MY_NAME = (joinRes.session.names && joinRes.session.names[MY_CHANNEL]) || name || "TN A";
     pollSession();
     generateSituationskarte();
   });
@@ -352,12 +358,10 @@ async function handleDone(s) {
   if (!window._doneShown) {
     window._doneShown = true;
     document.getElementById("card-result").classList.remove("hidden");
-    document.getElementById("status-result").textContent = ROLE === "control"
-      ? "Beide Transkripte da. Bewerte..."
-      : "Fertig. Der Laptop zeigt das Ergebnis.";
+    document.getElementById("status-result").textContent = "Auswertung läuft...";
   }
   if (s.eval) {
-    if (ROLE === "control" && !window._evalShown) {
+    if (!window._evalShown) {
       window._evalShown = true;
       document.getElementById("merged-transcript").textContent = mergeTranscripts(s);
       document.getElementById("merged-transcript").classList.remove("hidden");
@@ -391,16 +395,14 @@ function showStartCard(s) {
     document.getElementById("btn-start").disabled = true;
     await apiPost(`/api/session/${CODE}/start`, { duration: 240 });
   });
-  document.getElementById("status-start").textContent = ROLE === "control"
-    ? "Klicke Start, wenn beide bereit sind."
-    : "Klicke Start, wenn ihr beide bereit seid.";
+  document.getElementById("status-start").textContent = "Klicke Start, wenn ihr beide bereit seid.";
 }
 
 function scheduleStart(startAtEpoch, duration) {
   const delayMs = Math.max(0, startAtEpoch * 1000 - Date.now());
   document.getElementById("status-start").textContent = `Start in ${Math.round(delayMs/1000)} Sek...`;
   setTimeout(() => {
-    if (ROLE === "phone") {
+    if (MY_CHANNEL) {
       beginRecording(duration);
     } else {
       beginControlWait(duration);
@@ -511,7 +513,7 @@ async function finishRecording() {
   document.getElementById("status-own").textContent = "Sende an Sitzung...";
   try {
     await apiPost(`/api/session/${CODE}/transcript/${MY_CHANNEL}`, { fragments });
-    document.getElementById("status-own").textContent = "Fertig. Bitte beim Laptop weiterschauen.";
+    document.getElementById("status-own").textContent = "Fertig. Auswertung wird geladen...";
   } catch (e) {
     document.getElementById("status-own").textContent = "Fehler: " + e.message;
   }
@@ -625,7 +627,7 @@ async function runEvaluation(s) {
     await apiPost(`/api/session/${CODE}/eval`, result);
   } catch (e) {
     window._evalAttempted = false;
-    if (ROLE === "control") document.getElementById("status-result").textContent = "Fehler: " + e.message;
+    document.getElementById("status-result").textContent = "Fehler: " + e.message;
   }
 }
 </script>

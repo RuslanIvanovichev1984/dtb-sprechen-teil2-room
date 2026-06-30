@@ -74,12 +74,14 @@ nav a.active { background:#1F3864; color:#fff; }
 <!-- CONTROL: Sitzung erstellen -->
 <div class="card hidden" id="card-control-create">
   <h2>Sitzung erstellen</h2>
+  <label for="myNameCreate">Dein Name</label>
+  <input type="text" id="myNameCreate" placeholder="Vorname">
   <button id="btn-create">Sitzung erstellen</button>
   <div id="created-info" class="hidden">
     <div class="code" id="display-code"></div>
-    <div class="status">Beide Schueler oeffnen auf ihrem EIGENEN Handy:</div>
+    <div class="status">Partner öffnet auf seinem Gerät:</div>
     <div class="status"><b id="join-url"></b></div>
-    <div class="status" id="status-control-wait">Warte, bis sich beide Handys verbinden...</div>
+    <div class="status" id="status-control-wait">Warte auf Partner...</div>
   </div>
 </div>
 
@@ -222,12 +224,16 @@ async function apiPost(path, body) {
 if (ROLE === "control") {
   document.getElementById("card-control-create").classList.remove("hidden");
   document.getElementById("btn-create").addEventListener("click", async () => {
+    const name = document.getElementById("myNameCreate").value.trim();
     const res = await apiPost("/api/create");
     CODE = res.code;
     document.getElementById("display-code").textContent = CODE;
     document.getElementById("join-url").textContent = window.location.origin + "/join/" + CODE;
     document.getElementById("created-info").classList.remove("hidden");
     document.getElementById("btn-create").disabled = true;
+    const joinRes = await apiPost(`/api/session/${CODE}/join`, { name });
+    MY_CHANNEL = joinRes.channel;
+    MY_NAME = (joinRes.session.names && joinRes.session.names[MY_CHANNEL]) || name || "Schueler A";
     pollSession();
     generateImpulskarten();
   });
@@ -309,12 +315,10 @@ async function handleDone(s) {
   if (!window._doneShown) {
     window._doneShown = true;
     document.getElementById("card-result").classList.remove("hidden");
-    document.getElementById("status-result").textContent = ROLE === "control"
-      ? "Beide Transkripte da. Bewerte..."
-      : "Fertig. Der Lehrer bekommt das Ergebnis.";
+    document.getElementById("status-result").textContent = "Auswertung läuft...";
   }
   if (s.eval) {
-    if (ROLE === "control" && !window._evalShown) {
+    if (!window._evalShown) {
       window._evalShown = true;
       document.getElementById("merged-transcript").textContent = mergeTranscripts(s);
       document.getElementById("merged-transcript").classList.remove("hidden");
@@ -343,7 +347,7 @@ function showStartCard(s) {
   box.classList.remove("hidden");
   box.innerHTML = `<div class="frage"><b>Schueler A:</b> ${pair.a}</div><div class="frage"><b>Schueler B:</b> ${pair.b}</div>`;
 
-  if (ROLE === "phone") {
+  if (MY_CHANNEL) {
     const roleDiv = document.getElementById("my-role");
     roleDiv.classList.remove("hidden");
     roleDiv.innerHTML = `Du bist <span class="badge">${MY_NAME}</span> — deine Karte: ${MY_CHANNEL === "a" ? pair.a : pair.b}`;
@@ -354,16 +358,14 @@ function showStartCard(s) {
     document.getElementById("btn-start").disabled = true;
     await apiPost(`/api/session/${CODE}/start`, { duration: 180 });
   });
-  document.getElementById("status-start").textContent = ROLE === "control"
-    ? "Klicke Start, wenn beide bereit sind (oder die Schueler starten selbst)."
-    : "Klicke Start, wenn ihr beide bereit seid zu sprechen.";
+  document.getElementById("status-start").textContent = "Klicke Start, wenn ihr beide bereit seid.";
 }
 
 function scheduleStart(startAtEpoch, duration) {
   const delayMs = Math.max(0, startAtEpoch * 1000 - Date.now());
   document.getElementById("status-start").textContent = `Start in ${Math.round(delayMs/1000)} Sek...`;
   setTimeout(() => {
-    if (ROLE === "phone") {
+    if (MY_CHANNEL) {
       beginRecording(duration);
     } else {
       beginControlWait(duration);
@@ -515,7 +517,7 @@ async function finishRecording() {
   document.getElementById("status-own").textContent = "Sende an Sitzung...";
   try {
     await apiPost(`/api/session/${CODE}/transcript/${MY_CHANNEL}`, { fragments });
-    document.getElementById("status-own").textContent = "Fertig. Bitte beim Lehrer-Laptop weiterschauen.";
+    document.getElementById("status-own").textContent = "Fertig. Auswertung wird geladen...";
   } catch (e) {
     document.getElementById("status-own").textContent = "Fehler: " + e.message;
   }
@@ -662,7 +664,7 @@ async function runEvaluation(s) {
     await apiPost(`/api/session/${CODE}/eval`, result);
   } catch (e) {
     window._evalAttempted = false; // naechster Poll-Zyklus darf es erneut versuchen
-    if (ROLE === "control") document.getElementById("status-result").textContent = "Fehler: " + e.message;
+    document.getElementById("status-result").textContent = "Fehler: " + e.message;
   }
 }
 
