@@ -69,9 +69,16 @@ nav a.active { background:#1F3864; color:#fff; }
 <h1>DTB B2 — Sprechen Teil 3</h1>
 
 <div class="card">
-  <label for="groqKey">Groq API-Key (gsk_...)</label>
-  <input type="text" id="groqKey" placeholder="gsk_...">
-  <div class="status" id="key-hint"></div>
+  <div id="groq-key-form">
+    <label for="groqKey">Groq API-Key</label>
+    <input type="password" id="groqKey" placeholder="gsk_...">
+    <button id="btn-save-key" style="margin-top:4px;">Schlüssel speichern</button>
+    <div class="status" id="key-hint"></div>
+  </div>
+  <div id="groq-key-saved" class="hidden">
+    <span style="color:#2e7d32; font-weight:700; font-size:14px;">✅ Groq-Schlüssel gespeichert</span>
+    <button id="btn-change-key" style="margin-left:10px; background:transparent; color:#555; border:1px solid #ccc; padding:4px 10px; font-size:12px; border-radius:4px; cursor:pointer;">Ändern</button>
+  </div>
 </div>
 
 <!-- CONTROL: Sitzung erstellen -->
@@ -137,14 +144,32 @@ const PRESET_CODE = "{{ preset_code }}";
 
 const GROQ_KEY_STORAGE = "groqKey_" + ROLE;
 let groqKey = localStorage.getItem(GROQ_KEY_STORAGE) || "";
-document.getElementById("groqKey").value = groqKey;
-document.getElementById("groqKey").addEventListener("change", e => {
-  groqKey = e.target.value.trim();
-  localStorage.setItem(GROQ_KEY_STORAGE, groqKey);
-});
 document.getElementById("key-hint").textContent = ROLE === "control"
   ? "Wird für Situationsgenerierung und Bewertung genutzt. Kein Audio, nur Text."
   : "Wird genutzt, um deine Aufnahme zu transkribieren. Bleibt nur auf diesem Gerät.";
+function updateKeyUI() {
+  if (groqKey) {
+    document.getElementById("groq-key-form").classList.add("hidden");
+    document.getElementById("groq-key-saved").classList.remove("hidden");
+  } else {
+    document.getElementById("groq-key-form").classList.remove("hidden");
+    document.getElementById("groq-key-saved").classList.add("hidden");
+  }
+}
+updateKeyUI();
+document.getElementById("btn-save-key").addEventListener("click", () => {
+  const val = document.getElementById("groqKey").value.trim();
+  if (!val) return;
+  groqKey = val;
+  localStorage.setItem(GROQ_KEY_STORAGE, groqKey);
+  updateKeyUI();
+});
+document.getElementById("btn-change-key").addEventListener("click", () => {
+  document.getElementById("groq-key-form").classList.remove("hidden");
+  document.getElementById("groq-key-saved").classList.add("hidden");
+  document.getElementById("groqKey").value = "";
+  document.getElementById("groqKey").focus();
+});
 
 let CODE = PRESET_CODE || null;
 let MY_CHANNEL = null;
