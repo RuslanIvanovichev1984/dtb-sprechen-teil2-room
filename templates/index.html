@@ -25,7 +25,7 @@ button:disabled { background:#aaa; cursor:default; }
 .eval-stufe { font-weight:700; padding:2px 8px; border-radius:4px; font-size:12px; }
 .stufe-ok { background:#e8f5e9; color:#2e7d32; }
 .stufe-fail { background:#ffebee; color:#c62828; }
-.eval-kommentar { font-size:12px; color:#666; margin:2px 0 6px 20px; }
+.eval-kommentar { font-size:13px; color:#333; margin:6px 0 12px 0; line-height:1.7; }
 .eval-section { margin-top:10px; }
 .eval-section h4 { font-size:13px; font-weight:700; margin:0 0 4px 0; }
 .eval-bullet { font-size:13px; padding:2px 0 2px 14px; position:relative; }
@@ -677,7 +677,7 @@ function renderEval(ev, s, teilNr) {
       const stufe = k.stufe || "-";
       const ok = ["A","B"].includes(stufe);
       html += `<div class="eval-krit"><span>${ok?"✅":"❌"} ${label}</span><span class="eval-stufe ${ok?"stufe-ok":"stufe-fail"}">Stufe ${stufe}</span></div>`;
-      if (k.kommentar) html += `<div class="eval-kommentar">${k.kommentar}</div>`;
+      if (k.kommentar) html += `<div class="eval-kommentar">${k.kommentar.replace(/\n/g,'<br>')}</div>`;
     }
     if ("aufgabenverteilung" in res) {
       const av = res.aufgabenverteilung;
@@ -694,7 +694,7 @@ function renderEval(ev, s, teilNr) {
       html += `</div>`;
     }
     if (res.feedback) {
-      html += `<div class="eval-section"><h4>Feedback</h4><div class="eval-feedback">${res.feedback}</div></div>`;
+      html += `<div class="eval-section"><h4>Feedback</h4><div class="eval-feedback">${res.feedback.replace(/\n/g,'<br>')}</div></div>`;
     }
     html += `</div>`;
   }
