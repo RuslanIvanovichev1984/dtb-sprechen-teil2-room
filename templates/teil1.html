@@ -18,8 +18,20 @@ button.stop { background:#c62828; }
 .frage { background:#e3f2fd; border:1px solid #90caf9; border-radius:6px; padding:10px 14px; font-size:14px; margin:8px 0; }
 .timer { font-weight:700; color:#c62828; font-size:18px; }
 .transcript { background:#fffde7; border:1px solid #f9a825; border-radius:6px; padding:10px 14px; font-size:13px; white-space:pre-wrap; margin-top:8px; }
-.eval { white-space:pre-wrap; font-size:14px; line-height:1.5; }
 .hidden { display:none; }
+.eval-card { background:#f9f9f9; border-radius:8px; padding:16px 18px; margin-bottom:14px; }
+.eval-section-title { font-size:15px; font-weight:700; color:#1F3864; margin:0 0 10px 0; }
+.eval-krit { display:flex; justify-content:space-between; align-items:center; padding:6px 0; border-bottom:1px solid #eee; font-size:13px; }
+.eval-stufe { font-weight:700; padding:2px 8px; border-radius:4px; font-size:12px; }
+.stufe-ok { background:#e8f5e9; color:#2e7d32; }
+.stufe-fail { background:#ffebee; color:#c62828; }
+.eval-kommentar { font-size:13px; color:#333; margin:6px 0 12px 0; line-height:1.7; }
+.eval-bullet { font-size:13px; padding:2px 0 2px 14px; position:relative; }
+.eval-bullet::before { content:"•"; position:absolute; left:2px; }
+.eval-bullet.ok { color:#2e7d32; }
+.eval-bullet.fail { color:#c62828; }
+.eval-feedback { font-size:13px; color:#444; line-height:1.6; background:#fff; padding:10px; border-radius:6px; margin-top:4px; }
+.eval-gesamt { font-size:15px; font-weight:700; margin:10px 0; }
 nav { display:flex; gap:4px; margin-bottom:20px; background:#fff; border-radius:8px; padding:6px; box-shadow:0 2px 6px rgba(0,0,0,.08); }
 nav a { flex:1; text-align:center; padding:10px; border-radius:6px; font-size:13px; font-weight:600; color:#1F3864; text-decoration:none; }
 nav a:hover { background:#e3f2fd; }
@@ -147,7 +159,11 @@ IV Spektrum sprachlicher Mittel:
 WICHTIGE PRÜFUNGSREGELN:
 - Teil 1 wird in der Sie-Form gesprochen.
 - Auswendiglernen wird bestraft (wirkt unnatürlich).
-- 1C ist Mediation: TN soll paraphrasieren ("Im Grunde meinte er/sie, dass..."), NICHT wortwörtlich wiederholen.
+- 1C ist Paraphrase/Mediation: TN soll den Inhalt seiner Aussage (1A) in ANDEREN Worten wiedergeben — andere Satzstruktur, anderes Vokabular, gleicher Inhalt.
+- 1C verlangt KEINE persönliche Meinung ("finde ich gut/schlecht"), KEINE neue Argumentation und KEIN Bewerten des Inhalts.
+- Stufe A in 1C: TN gibt die Kernaussagen aus 1A mit anderen Worten wieder. Auch wenn keine Meinung geäußert wird, ist das vollständig adäquat.
+- Stufe C/D in 1C: TN wiederholt fast wörtlich dieselben Sätze wie in 1A (gleiche Formulierungen, gleiche Struktur).
+- KEINESFALLS darf in der Bewertung stehen, dass "eigene Meinung fehlt" — das ist kein Kriterium für 1C.
 
 Erstelle zusätzlich ein "musterantworten"-Feld mit idealen B2-Versionen aller drei Teile. Behalte dabei die tatsächlichen Themen und Argumente des Lernenden bei — verbessere nur die sprachlichen Konstruktionen (Grammatik, Wortschatz, Satzbau, Sie-Form durchgehend). Das Ergebnis soll natürlich klingen, nicht akademisch.
 
@@ -384,6 +400,45 @@ async function stop1C() {
   }
 }
 
+function renderEval1(ev) {
+  const KRITERIEN = [
+    ["ki_1a",  "K-I Teil 1A — Monolog"],
+    ["ki_1b",  "K-I Teil 1B — Prüferfragen"],
+    ["ki_1c",  "K-I Teil 1C — Erläuterung in eigenen Worten"],
+    ["kii",    "K-II Aussprache/Intonation"],
+    ["kiii",   "K-III Formale Richtigkeit"],
+    ["kiv",    "K-IV Spektrum sprachlicher Mittel"],
+  ];
+  let html = `<div class="eval-card">`;
+  const gesamt = ev.gesamt_p ?? "-";
+  const maxP   = ev.max_p  ?? 24;
+  const bestanden = gesamt !== "-" && gesamt >= 12;
+  html += `<div class="eval-gesamt" style="color:${bestanden?"#2e7d32":"#c62828"}">${bestanden?"✅":"❌"} Gesamt: ${gesamt} / ${maxP} Punkte</div>`;
+  for (const [krit, label] of KRITERIEN) {
+    const k = ev[krit] || {};
+    const stufe = k.stufe || "-";
+    const ok = ["A","B"].includes(stufe);
+    const punkte = k.punkte !== undefined ? ` (${k.punkte} P.)` : "";
+    html += `<div class="eval-krit"><span>${ok?"✅":"❌"} ${label}</span><span class="eval-stufe ${ok?"stufe-ok":"stufe-fail"}">Stufe ${stufe}${punkte}</span></div>`;
+    if (k.kommentar) html += `<div class="eval-kommentar">${k.kommentar.replace(/\n/g,"<br>")}</div>`;
+  }
+  if (ev.staerken && ev.staerken.length) {
+    html += `<div style="margin-top:10px"><h4 style="font-size:13px;font-weight:700;color:#2e7d32;margin:0 0 4px 0">Stärken</h4>`;
+    ev.staerken.forEach(s => { html += `<div class="eval-bullet ok">${s}</div>`; });
+    html += `</div>`;
+  }
+  if (ev.verbesserungen && ev.verbesserungen.length) {
+    html += `<div style="margin-top:10px"><h4 style="font-size:13px;font-weight:700;color:#c62828;margin:0 0 4px 0">Verbesserungsvorschläge</h4>`;
+    ev.verbesserungen.forEach(v => { html += `<div class="eval-bullet fail">${v}</div>`; });
+    html += `</div>`;
+  }
+  if (ev.feedback) {
+    html += `<div style="margin-top:10px"><h4 style="font-size:13px;font-weight:700;margin:0 0 4px 0">Feedback</h4><div class="eval-feedback">${ev.feedback.replace(/\n/g,"<br>")}</div></div>`;
+  }
+  html += `</div>`;
+  return html;
+}
+
 // Bewertung
 document.getElementById("btn-eval").addEventListener("click", async () => {
   document.getElementById("btn-eval").disabled = true;
@@ -395,7 +450,7 @@ document.getElementById("btn-eval").addEventListener("click", async () => {
       { role: "user", content: userContent }
     ], true);
     evalResult = JSON.parse(raw);
-    document.getElementById("eval-result").textContent = JSON.stringify(evalResult, null, 2);
+    document.getElementById("eval-result").innerHTML = renderEval1(evalResult);
     document.getElementById("status-eval").textContent = "Fertig.";
     document.getElementById("card-download").classList.remove("hidden");
   } catch(e) {
