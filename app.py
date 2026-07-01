@@ -555,12 +555,34 @@ def _send_word_to_teacher(code, s):
         )
         msg.attach(part)
 
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as srv:
+        with smtplib.SMTP("smtp.gmail.com", 587) as srv:
+            srv.ehlo()
+            srv.starttls()
             srv.login(GMAIL_USER, GMAIL_APP_PASSWORD)
             srv.send_message(msg)
         print(f"[email] Word gesendet fuer Sitzung {code}")
     except Exception as e:
         print(f"[email] Fehler beim Senden: {e}")
+
+
+@app.route("/api/test_email")
+def api_test_email():
+    if not GMAIL_APP_PASSWORD:
+        return jsonify({"error": "GMAIL_APP_PASSWORD not set"}), 500
+    try:
+        msg = MIMEMultipart()
+        msg["From"] = GMAIL_USER
+        msg["To"] = TEACHER_EMAIL
+        msg["Subject"] = "DTB Sprechen App — Email-Test"
+        msg.attach(MIMEText("Email-Versand funktioniert.", "plain", "utf-8"))
+        with smtplib.SMTP("smtp.gmail.com", 587) as srv:
+            srv.ehlo()
+            srv.starttls()
+            srv.login(GMAIL_USER, GMAIL_APP_PASSWORD)
+            srv.send_message(msg)
+        return jsonify({"ok": True, "to": TEACHER_EMAIL})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/api/session/<code>/docx")
