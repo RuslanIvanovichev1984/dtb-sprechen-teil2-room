@@ -100,8 +100,8 @@ nav a.active { background:#1F3864; color:#fff; }
 
 <!-- 1C -->
 <div class="card hidden" id="card-1c">
-  <h2>Teil 1C — Eigene Aussage in eigenen Worten erläutern (~30 Sek)</h2>
-  <p style="font-size:13px;color:#555;">In der echten Prüfung macht das TN B über TN A's Aussage. Für die Solo-Übung: erkläre kurz, was du in 1A im Grunde gesagt hast — in eigenen Worten, nicht wortgleich wiederholt.</p>
+  <h2>Teil 1C — Erläuterung eines Aspekts (~30 Sek)</h2>
+  <p style="font-size:13px;color:#555;">In der echten Prüfung bittet Prüfer/in 2 den Partner: „TN A hat über … gesprochen. Das habe ich nicht ganz verstanden. Können Sie mir das noch einmal erläutern?" — Für die Solo-Übung: wähle einen konkreten Aspekt aus 1A und erkläre ihn in anderen Worten. Keine Meinung, kein Bewerten, kein wörtliches Wiederholen.</p>
   <button id="btn-rec-1c">Aufnahme starten</button>
   <button id="btn-stop-1c" class="stop hidden">Aufnahme stoppen <span style="font-weight:400;font-size:12px;opacity:.8">(optional)</span></button>
   <span class="timer hidden" id="timer-1c">00:00</span>
@@ -159,11 +159,14 @@ IV Spektrum sprachlicher Mittel:
 WICHTIGE PRÜFUNGSREGELN:
 - Teil 1 wird in der Sie-Form gesprochen.
 - Auswendiglernen wird bestraft (wirkt unnatürlich).
-- 1C ist Paraphrase/Mediation: TN soll den Inhalt seiner Aussage (1A) in ANDEREN Worten wiedergeben — andere Satzstruktur, anderes Vokabular, gleicher Inhalt.
-- 1C verlangt KEINE persönliche Meinung ("finde ich gut/schlecht"), KEINE neue Argumentation und KEIN Bewerten des Inhalts.
-- Stufe A in 1C: TN gibt die Kernaussagen aus 1A mit anderen Worten wieder. Auch wenn keine Meinung geäußert wird, ist das vollständig adäquat.
-- Stufe C/D in 1C: TN wiederholt fast wörtlich dieselben Sätze wie in 1A (gleiche Formulierungen, gleiche Struktur).
-- KEINESFALLS darf in der Bewertung stehen, dass "eigene Meinung fehlt" — das ist kein Kriterium für 1C.
+- 1C heißt offiziell „Erläuterung eines Aspekts" (ca. 30 Sekunden). In der echten Prüfung bittet Prüfer/in 2 den PARTNER, EINEN Teilaspekt aus den Antworten (1A+1B) zu erläutern, z. B.: „TN A hat über … gesprochen. Das habe ich nicht ganz verstanden. Können Sie mir das noch einmal erläutern?" In dieser Solo-Übung erläutert der/die TN einen selbst gewählten Teilaspekt aus dem eigenen Monolog.
+- 1C = Paraphrase/Mediation: TN erläutert EINEN konkreten Teilaspekt aus 1A/1B in anderen Worten. Andere Satzstruktur, anderes Vokabular — gleicher Inhalt.
+- 1C verlangt ausdrücklich KEINE persönliche Meinung, KEIN Bewerten des Inhalts, KEINE neuen Argumente.
+- Stufe A: TN erklärt den gewählten Aspekt klar und flüssig in anderen Worten. Keine Meinung nötig.
+- Stufe B: TN erklärt den Aspekt überwiegend klar, kleine sprachliche Lücken.
+- Stufe C: TN erklärt nur teilweise, oder wiederholt fast wörtlich dieselben Formulierungen aus 1A.
+- Stufe D: TN wiederholt wortwörtlich oder der Aspekt wird nicht erklärt.
+- KEINESFALLS in der Bewertung erwähnen, dass „eigene Meinung fehlt" — das ist KEIN Kriterium für 1C.
 
 Erstelle zusätzlich ein "musterantworten"-Feld mit idealen B2-Versionen aller drei Teile. Behalte dabei die tatsächlichen Themen und Argumente des Lernenden bei — verbessere nur die sprachlichen Konstruktionen (Grammatik, Wortschatz, Satzbau, Sie-Form durchgehend). Das Ergebnis soll natürlich klingen, nicht akademisch.
 
@@ -404,7 +407,7 @@ function renderEval1(ev) {
   const KRITERIEN = [
     ["ki_1a",  "K-I Teil 1A — Monolog"],
     ["ki_1b",  "K-I Teil 1B — Prüferfragen"],
-    ["ki_1c",  "K-I Teil 1C — Erläuterung in eigenen Worten"],
+    ["ki_1c",  "K-I Teil 1C — Erläuterung eines Aspekts"],
     ["kii",    "K-II Aussprache/Intonation"],
     ["kiii",   "K-III Formale Richtigkeit"],
     ["kiv",    "K-IV Spektrum sprachlicher Mittel"],
