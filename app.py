@@ -343,6 +343,10 @@ def _build_teil2_docx(code, s):
     doc.add_paragraph(f"Sitzungscode: {code}")
     doc.add_paragraph(f"Teilnehmer: {a_name} & {b_name}")
 
+    skala = doc.add_paragraph()
+    skala.add_run("Bewertungsskala: ").bold = True
+    skala.add_run("A = 10 P. (bestanden)  |  B = 7,5 P. (bestanden)  |  C = 4 P. (nicht bestanden)  |  D = 0 P. (nicht bestanden)")
+
     doc.add_heading("Dialog-Transkript", level=2)
     for frag in merged:
         doc.add_paragraph(f"[{_fmt_time(round(frag['start']))}] {frag['speaker']}: {frag['text']}")
@@ -421,6 +425,10 @@ def _build_teil3_docx(code, s):
     if karte_text:
         doc.add_heading("Situationskarte", level=2)
         doc.add_paragraph(karte_text)
+
+    skala = doc.add_paragraph()
+    skala.add_run("Bewertungsskala: ").bold = True
+    skala.add_run("A = 10 P. (bestanden)  |  B = 7,5 P. (bestanden)  |  C = 4 P. (nicht bestanden)  |  D = 0 P. (nicht bestanden)")
 
     doc.add_heading("Dialog-Transkript", level=2)
     for frag in merged:

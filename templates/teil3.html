@@ -215,41 +215,66 @@ Gib NUR folgendes JSON zurück (kein Markdown):
 `;
 
 const TEIL3_PROMPT = `
-Du bist ein lizenzierter Prüfer/Assessor für "Deutsch-Test für den Beruf B2" (DTB B2, BAMF/telc), Sprechen Teil 3 (Lösungswege diskutieren, beruflicher Kontext, beide TN haben DIESELBE Aufgabenkarte, ~4 Minuten).
+Du bist ein zertifizierter Prüfer für den "Deutsch-Test für den Beruf B2" (DTB B2, BAMF/telc), Sprechen Teil 3: Lösungswege diskutieren, beruflicher Kontext, beide TN haben DIESELBE Aufgabenkarte, ~4 Minuten.
 
-Du bekommst ein chronologisches Transkript. Jede Zeile beginnt mit [Zeit] Name (A): ... oder Name (B): ... — das (A)/(B) markiert IMMER zuverlässig, wem die Äußerung gehört.
+Das Transkript ist automatisch erstellt und kann kleine Fehler enthalten. Jede Zeile: [Zeit] Name (A/B): ... — (A)/(B) bestimmt IMMER zuverlässig die Sprecherin/den Sprecher.
 
-Bewerte JEDE Person EINZELN nach folgenden Kriterien (A/B/C/D):
+BEWERTUNGSSKALA (immer im kommentar nennen):
+Stufe A = 10 P. (weit über Anforderungen) | Stufe B = 7,5 P. (erfüllt Anforderungen, bestanden) | Stufe C = 4 P. (teilweise erfüllt, NICHT bestanden) | Stufe D = 0 P. (nicht erfüllt)
+Bestanden = A oder B. Nicht bestanden = C oder D.
+WICHTIG K-I: Wenn KEINE Aufgabenverteilung am Ende stattgefunden hat → K-I maximal Stufe C, unabhängig von der Diskussionsqualität.
 
-K-I Kommunikative Aufgabenbewältigung (10 P: A=10, B=7.5, C=4, D=0):
-Prüfe für JEDE Person:
-- Hat die Person eigene Lösungsvorschläge eingebracht (nicht nur zugestimmt)?
-- Hat sie auf Vorschläge des Partners reagiert (zugestimmt, Bedenken geäußert, Alternativen vorgeschlagen)?
-- War eine echte Diskussion erkennbar (kein bloßes gegenseitiges Nicken)?
-- PFLICHT: War die Person an der Aufgabenverteilung am Ende beteiligt?
-WICHTIG: Wenn KEINE Aufgabenverteilung stattgefunden hat → K-I kann MAXIMAL Stufe C sein, egal wie gut die Diskussion war.
+ANALYSIERE JEDE PERSON GETRENNT. Für jedes Kriterium schreibst du einen DETAILLIERTEN kommentar — keine allgemeinen Urteile, sondern Analyse jeder einzelnen Äußerung:
 
-K-II Aussprache/Intonation: NUR aus Transkript ableitbar (Selbstkorrekturen, Abbrüche als Hinweis) — markiere Einschränkung im Feedback.
-K-III Formale Richtigkeit (Grammatik, Konjunktiv II für Vorschläge ein Plus).
-K-IV Spektrum sprachlicher Mittel (Redemittel für Vorschläge/Zustimmung/Ablehnung/Kompromiss, Nominalverbindungen).
+K-I Kommunikative Aufgabenbewältigung:
+— Gehe durch JEDEN Gesprächszug der Person und bewerte ihn einzeln.
+— Zähle und liste: Wie viele eigene Lösungsvorschläge hat die Person eingebracht? Zitiere jeden mit Zeitstempel.
+— Hat sie aktiv auf Vorschläge des Partners reagiert (zugestimmt, Bedenken geäußert, Alternative vorgeschlagen) oder nur genickt? Zitiere konkret.
+— War eine echte Diskussion erkennbar oder nur gegenseitiges Bestätigen?
+— War die Person an der Aufgabenverteilung am Ende beteiligt? Zitiere die Stelle oder stelle fest, dass sie fehlt.
 
-Erstelle zusätzlich ein "musterdialog"-Feld: eine korrigierte Version des Gesprächs, die zeigt, wie die Diskussion auf prüfungsausreichendem B2-Niveau ausgesehen hätte — inklusive Lösungsvorschläge, Reaktionen UND Aufgabenverteilung am Ende. Behalte die tatsächlichen Ideen der Lernenden bei, verbessere nur Sprache und Struktur. Natürlich klingen, nicht akademisch. Verwende die tatsächlichen Vornamen (ohne "(A)"/"(B)").
+K-II Aussprache/Intonation:
+— Nur indirekt beurteilbar. Weise deutlich darauf hin.
+— Zitiere JEDE Stelle mit Sprachflussproblemen: Abbrüche, Wortsuchen, Wiederholungen, Selbstkorrekturen (mit Zeitstempel).
 
-Schreibe ALLE Texte in korrektem Standarddeutsch mit echten Umlauten und Eszett (ä, ö, ü, ß) — NICHT als ae/oe/ue/ss.
+K-III Formale Richtigkeit:
+— Liste JEDEN grammatischen Fehler einzeln:
+  • Direktes Zitat mit Zeitstempel
+  • Fehlertyp (Konjunktiv II, Präposition, Kasus, Verb, Wortstellung usw.)
+  • Korrekte Version
+— Wurde Konjunktiv II für Vorschläge verwendet? ("wir könnten...", "es wäre sinnvoll...") — fehlt er, ist das ein Minus bei K-III.
+
+K-IV Spektrum sprachlicher Mittel:
+— Wurden Redemittel für Vorschläge, Zustimmung, Ablehnung, Kompromiss verwendet? Liste konkret, was verwendet wurde und was fehlte.
+— Wurden Nominalverbindungen / Fachausdrücke eingesetzt? Zitiere oder stelle Fehlen fest.
+— Zeige für einfache Formulierungen B2-Alternativen: "statt 'das ist gut' → 'das halte ich für sinnvoll, weil...'"
+
+"feedback": AUSFÜHRLICH (mind. 150 Wörter). Gesamteinschätzung mit Bezug auf konkrete Transkript-Stellen. Was genau fehlt für Stufe B. Klare Aussage: bestanden oder nicht und warum.
+
+"staerken": Mind. 3 KONKRETE Stärken mit direktem Zitat.
+
+"verbesserungen": Mind. 4 KONKRETE Verbesserungen: "falsch/schwach → besser" mit Zitat.
+
+Musterdialog: vollständige korrigierte Version auf B2-Niveau — mit echten Lösungsvorschlägen, Reaktionen UND Aufgabenverteilung am Ende. Echte Vornamen, natürlich klingend.
+
+Schreibe ALLES in korrektem Deutsch mit Umlauten und ß — NICHT ae/oe/ue/ss.
 
 Gib NUR folgendes JSON zurück (kein Markdown), schueler_a = Person (A), schueler_b = Person (B):
 {
   "schueler_a": {
-    "ki":{"stufe":"A/B/C/D","kommentar":"..."}, "kii":{"stufe":"...","kommentar":"..."}, "kiii":{"stufe":"...","kommentar":"..."}, "kiv":{"stufe":"...","kommentar":"..."},
+    "ki":{"stufe":"A/B/C/D","kommentar":"detaillierte Analyse jedes Zugs..."},
+    "kii":{"stufe":"...","kommentar":"..."},
+    "kiii":{"stufe":"...","kommentar":"vollständige Fehlerliste mit Zitaten..."},
+    "kiv":{"stufe":"...","kommentar":"..."},
     "aufgabenverteilung": true/false,
     "bestanden_einschaetzung": true/false,
-    "staerken": ["...", "..."],
-    "verbesserungen": ["...", "..."],
-    "feedback": "ausführliches, konkretes Feedback: Lösungsvorschläge, Reaktionen, Aufgabenverteilung, ob das Niveau für Teil 3 ausreicht"
+    "staerken": ["konkretes Zitat + Erklärung", "..."],
+    "verbesserungen": ["falsch → besser (mit Zitat)", "..."],
+    "feedback": "ausführliches Gesamtfeedback mind. 150 Wörter..."
   },
   "schueler_b": { ... gleiche Struktur ... },
   "musterdialog": [
-    {"speaker": "Vorname", "text": "korrigierter/idealer Dialogzug"},
+    {"speaker": "Vorname", "text": "..."},
     ...
   ]
 }
