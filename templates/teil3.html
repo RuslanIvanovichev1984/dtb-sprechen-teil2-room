@@ -413,6 +413,8 @@ async function handleDone(s) {
   if (s.eval) {
     if (!window._evalShown) {
       window._evalShown = true;
+      document.getElementById("merged-transcript").textContent = mergeTranscripts(s);
+      document.getElementById("merged-transcript").classList.remove("hidden");
       document.getElementById("eval-result").innerHTML = renderEval(s.eval, s, "3");
       document.getElementById("status-result").textContent = "Fertig.";
       const dl = document.createElement("a");
@@ -422,6 +424,7 @@ async function handleDone(s) {
       dl.style.marginTop = "10px";
       document.getElementById("card-result").appendChild(dl);
     }
+    if (!window._audioDownloadShown) tryMergeAudio("3");
     return;
   }
   if (!window._evalAttempted) {
@@ -537,6 +540,10 @@ async function beginRecording(duration) {
   pendingTranscriptions = [];
   micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
   sessionStartMs = Date.now();
+  window._fullChunks = [];
+  window._fullRecorder = new MediaRecorder(micStream);
+  window._fullRecorder.ondataavailable = e => { if (e.data.size) window._fullChunks.push(e.data); };
+  window._fullRecorder.start(1000);
   let remaining = duration;
   document.getElementById("timer").textContent = fmtTime(remaining);
   const interval = setInterval(() => {
@@ -554,13 +561,31 @@ async function finishRecording() {
   document.getElementById("btn-hold").classList.add("hidden");
   document.getElementById("status-recording").textContent = "Verarbeite letzte Aufnahmen...";
   await Promise.all(pendingTranscriptions);
+  const audioUpload = new Promise(resolve => {
+    const fr = window._fullRecorder;
+    if (fr && fr.state !== "inactive") {
+      fr.onstop = async () => {
+        const blob = new Blob(window._fullChunks || [], { type: fr.mimeType || "audio/webm" });
+        try {
+          await fetch(`/api/session/${CODE}/audio/${MY_CHANNEL}`, {
+            method: "POST", headers: { "Content-Type": blob.type }, body: blob
+          });
+        } catch(e) { console.warn("Audio-Upload:", e); }
+        resolve();
+      };
+      fr.stop();
+    } else resolve();
+  });
   micStream.getTracks().forEach(t => t.stop());
   document.getElementById("card-recording").classList.add("hidden");
   document.getElementById("card-own-transcript").classList.remove("hidden");
   fragments.sort((a, b) => a.start - b.start);
   document.getElementById("status-own").textContent = "Sende an Sitzung...";
   try {
-    await apiPost(`/api/session/${CODE}/transcript/${MY_CHANNEL}`, { fragments });
+    await Promise.all([
+      apiPost(`/api/session/${CODE}/transcript/${MY_CHANNEL}`, { fragments }),
+      audioUpload
+    ]);
     document.getElementById("status-own").textContent = "Fertig. Auswertung wird geladen...";
   } catch (e) {
     document.getElementById("status-own").textContent = "Fehler: " + e.message;
@@ -661,6 +686,67 @@ function renderEval(ev, s, teilNr) {
     html += `</div>`;
   }
   return html;
+}
+
+async function tryMergeAudio(teilNr) {
+  if (window._audioDownloadShown) return;
+  try {
+    const [resA, resB] = await Promise.all([
+      fetch(`/api/session/${CODE}/audio/a`),
+      fetch(`/api/session/${CODE}/audio/b`)
+    ]);
+    if (!resA.ok || !resB.ok) return;
+    window._audioDownloadShown = true;
+    const [bufA, bufB] = await Promise.all([resA.arrayBuffer(), resB.arrayBuffer()]);
+    const ctx = new AudioContext();
+    const [decA, decB] = await Promise.all([
+      ctx.decodeAudioData(bufA),
+      ctx.decodeAudioData(bufB)
+    ]);
+    const len = Math.max(decA.length, decB.length);
+    const out = ctx.createBuffer(1, len, decA.sampleRate);
+    const outData = out.getChannelData(0);
+    const aData = decA.getChannelData(0);
+    const bData = decB.getChannelData(0);
+    for (let i = 0; i < len; i++) {
+      outData[i] = ((i < aData.length ? aData[i] : 0) + (i < bData.length ? bData[i] : 0)) * 0.5;
+    }
+    const wavBlob = audioBufferToWav(out);
+    const url = URL.createObjectURL(wavBlob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `Dialog_Teil${teilNr}_${CODE}.wav`;
+    link.textContent = "🎧 Aufnahme des Dialogs herunterladen";
+    link.style.cssText = "display:block; margin-top:14px; font-weight:600; color:#1F3864;";
+    const note = document.createElement("p");
+    note.style.cssText = "font-size:12px; color:#888; margin:3px 0 0 0;";
+    note.textContent = "⚠️ Die Audiodatei wird nach 10 Min. vom Server gelöscht.";
+    document.getElementById("card-result").appendChild(link);
+    document.getElementById("card-result").appendChild(note);
+  } catch(e) { /* wird beim naechsten Poll erneut versucht */ }
+}
+
+function audioBufferToWav(buffer) {
+  const sr = buffer.sampleRate;
+  const samples = buffer.getChannelData(0);
+  const pcm = new Int16Array(samples.length);
+  for (let i = 0; i < samples.length; i++) {
+    pcm[i] = Math.max(-32768, Math.min(32767, Math.round(samples[i] * 32767)));
+  }
+  const dataLen = pcm.byteLength;
+  const wav = new ArrayBuffer(44 + dataLen);
+  const v = new DataView(wav);
+  const s4 = (o,n) => v.setUint32(o,n,true);
+  const s2 = (o,n) => v.setUint16(o,n,true);
+  "RIFF".split("").forEach((c,i) => v.setUint8(i, c.charCodeAt(0)));
+  s4(4, 36 + dataLen);
+  "WAVE".split("").forEach((c,i) => v.setUint8(8+i, c.charCodeAt(0)));
+  "fmt ".split("").forEach((c,i) => v.setUint8(12+i, c.charCodeAt(0)));
+  s4(16,16); s2(20,1); s2(22,1); s4(24,sr); s4(28,sr*2); s2(32,2); s2(34,16);
+  "data".split("").forEach((c,i) => v.setUint8(36+i, c.charCodeAt(0)));
+  s4(40, dataLen);
+  new Int16Array(wav, 44).set(pcm);
+  return new Blob([wav], { type: "audio/wav" });
 }
 
 async function runEvaluation(s) {

@@ -217,6 +217,7 @@ def api_create():
         "teil": body.get("teil", "t2"),  # "t2" oder "t3"
         "speaking": {"a": False, "b": False},  # live indicator
         "live_fragments": [],  # [{channel, start, end, text}] - for live display during recording
+        "audio": {},  # channel -> (bytes, content_type), max 10 min
     }
     return jsonify({"code": code})
 
@@ -319,6 +320,30 @@ def api_live_fragment(code):
         "text": body.get("text", ""),
     })
     return jsonify({"ok": True})
+
+
+@app.route("/api/session/<code>/audio/<channel>", methods=["POST"])
+def api_upload_audio(code, channel):
+    s = SESSIONS.get(code)
+    if not s or channel not in ("a", "b"):
+        return jsonify({"error": "not_found"}), 404
+    ct = request.content_type or "audio/webm"
+    s["audio"][channel] = (request.data, ct)
+    def _expire():
+        time.sleep(600)
+        if code in SESSIONS:
+            SESSIONS[code].get("audio", {}).pop(channel, None)
+    threading.Thread(target=_expire, daemon=True).start()
+    return jsonify({"ok": True})
+
+
+@app.route("/api/session/<code>/audio/<channel>", methods=["GET"])
+def api_get_audio(code, channel):
+    s = SESSIONS.get(code)
+    if not s or channel not in ("a", "b") or channel not in s.get("audio", {}):
+        return jsonify({"error": "not_found"}), 404
+    data, ct = s["audio"][channel]
+    return send_file(io.BytesIO(data), mimetype=ct, as_attachment=False)
 
 
 @app.route("/api/session/<code>/eval", methods=["POST"])
