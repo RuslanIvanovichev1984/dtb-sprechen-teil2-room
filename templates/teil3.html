@@ -413,8 +413,6 @@ async function handleDone(s) {
   if (s.eval) {
     if (!window._evalShown) {
       window._evalShown = true;
-      document.getElementById("merged-transcript").textContent = mergeTranscripts(s);
-      document.getElementById("merged-transcript").classList.remove("hidden");
       document.getElementById("eval-result").innerHTML = renderEval(s.eval, s, "3");
       document.getElementById("status-result").textContent = "Fertig.";
       const dl = document.createElement("a");
